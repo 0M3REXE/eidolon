@@ -3,8 +3,13 @@ FROM rust:slim-bullseye as builder
 
 WORKDIR /usr/src/eidolon
 
-# Install build dependencies (openssl, pkg-config)
-RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libssl-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+
 
 # Copy manifests first to cache dependencies
 COPY Cargo.toml Cargo.lock ./
