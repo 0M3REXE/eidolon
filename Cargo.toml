@@ -63,7 +63,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 metrics = "0.22"
 metrics-exporter-prometheus = "0.13"
 fake = "4.4.0"
-rand = "0.10.0"
+rand = "0.8"
 
 # Encryption
 aes-gcm = "0.10"
