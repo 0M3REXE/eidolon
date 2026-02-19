@@ -1,0 +1,31 @@
+[server]
+port = 3000
+host = "0.0.0.0"
+
+[redis]
+url = "redis://127.0.0.1:6379"
+ttl_seconds = 3600 # 1 hour
+
+[security]
+fail_open = false
+# IMPORTANT: Change this to a unique 32-character secret before deploying.
+# Override via SECURITY__ENCRYPTION_KEY environment variable.
+encryption_key = "change-me-to-32-char-secret-!!!!"
+
+[ollama]
+base_url = "http://localhost:11434"
+
+[logging]
+level = "info"
+
+[[custom]]
+name = "PROJECT_ID"
+regex = "Project-\\d{4}"  # Matches "Project-1234"
+
+[rate_limit]
+requests_per_second = 20
+burst_size = 10
+
+[nlp]
+model_path = "assets/bert-ner-quantized.onnx"
+tokenizer_path = "assets/tokenizer.json"

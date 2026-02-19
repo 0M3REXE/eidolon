@@ -1,0 +1,85 @@
+[package]
+name = "eidolon"
+version = "0.1.0"
+edition = "2024"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }
+
+[dependencies]
+# Async Runtime
+tokio = { version = "1.36", features = ["full"] }
+
+# Async Utilities
+async-stream = "0.3"
+tokio-stream = "0.1"
+axum = { version = "0.8", features = ["macros"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["trace", "cors", "catch-panic", "limit"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Configuration
+config = "0.14"
+dotenvy = "0.15"
+
+# Validations
+validator = { version = "0.16", features = ["derive"] }
+
+# Error Handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# HTTP Client
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# State Management
+redis = { version = "0.25", features = ["tokio-comp", "connection-manager"] }
+uuid = { version = "1.7", features = ["v4", "fast-rng"] }
+
+# Regex Engine
+regex = "1.10"
+# Web Framework
+http-body-util = "0.1"
+bytes = "1"
+# LazyLock is stable in Rust 1.80+, but we can use lazy_static or std::sync::OnceLock if needed.
+# We will use std::sync::OnceLock as it is standard.
+
+# Crypto
+sha2 = "0.10"
+hex = "0.4"
+# ML Integration
+# ort = { version = "2.0.0-rc.0", features = ["load-dynamic"] } # Using rc for 2.0 as requested/planned
+ort = { version = "=2.0.0-rc.9", features = ["load-dynamic", "download-binaries", "ndarray"] }
+ort-sys = "=2.0.0-rc.9"
+tokenizers = { version = "0.15", features = ["onig", "http"] }
+ndarray = "0.16"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+metrics = "0.22"
+metrics-exporter-prometheus = "0.13"
+fake = "4.4.0"
+rand = "0.10.0"
+
+# Encryption
+aes-gcm = "0.10"
+
+# Unicode normalization (shield hardening)
+unicode-normalization = "0.1"
+
+# Multi-pattern string matching (stream unredactor)
+aho-corasick = "1.1"
+
+# Rate limiting (token-bucket per IP)
+governor = "0.6"
+dashmap = "5"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

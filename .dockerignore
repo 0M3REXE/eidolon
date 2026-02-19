@@ -1,0 +1,37 @@
+# System
+.git/
+.env
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose.yml
+
+# Build Artifacts
+target/
+*.log
+*.ps1
+crash_reports/
+
+# Documentation & Misc
+README.md
+Techstack.md
+PRD.md
+PROJECT_IMPROVEMENTS.md
+best_practices.md
+docs.md
+client.py
+*.pyc
+__pycache__/
+
+# Large Binary Archives (Exclude from build context)
+*.zip
+onnxruntime-win-x64-1.24.1/
+temp_ort_1.20/
+runtime_dll/
+
+# Extension (Client-side only)
+extension/
+
+# Assets (Comment out if you want to include them in the build)
+# assets/
+# Note: Keep assets/ un-ignored so you can COPY them in Dockerfile if needed.
