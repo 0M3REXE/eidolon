@@ -1,5 +1,5 @@
 # Build Stage
-FROM rust:1.81-slim-bullseye as builder
+FROM rust:slim-bullseye as builder
 
 WORKDIR /usr/src/eidolon
 
