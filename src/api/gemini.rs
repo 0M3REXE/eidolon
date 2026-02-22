@@ -67,12 +67,10 @@ impl GeminiRequest {
 
             // Extract text from OpenAI content (Value)
             // If string, simple. If array (multimodal), we only take text parts for now or flatten.
-            let text = if msg.content.is_string() {
-                msg.content.as_str().unwrap_or("").to_string()
-            } else if msg.content.is_array() {
-                // primitive handling of array content: join all text parts
-                let mut full_text = String::new();
-                if let Some(arr) = msg.content.as_array() {
+            let text = match &msg.content {
+                Some(crate::api::models::ChatMessageContent::Text(s)) => s.clone(),
+                Some(crate::api::models::ChatMessageContent::Parts(arr)) => {
+                    let mut full_text = String::new();
                     for item in arr {
                         if let Some(obj) = item.as_object() {
                             if let Some(t) = obj.get("type").and_then(|v| v.as_str()) {
@@ -85,10 +83,9 @@ impl GeminiRequest {
                             }
                         }
                     }
-                }
-                full_text
-            } else {
-                String::new()
+                    full_text
+                },
+                None => String::new(),
             };
 
             GeminiContent {
@@ -148,7 +145,7 @@ impl OpenAIChatResponse {
                 index: i as u32,
                 message: OpenAIChatMessage {
                     role,
-                    content: serde_json::Value::String(content_text),
+                    content: Some(crate::api::models::ChatMessageContent::Text(content_text)),
                     name: None,
                     unknown_fields: Default::default(),
                 },

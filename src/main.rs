@@ -63,6 +63,16 @@ async fn main() -> anyhow::Result<()> {
         );
     }
 
+    // ── Shield Engine ────────────────────────────────────────────────────────
+    if let (Some(model_path), Some(tokenizer_path)) = (&config.shield.model_path, &config.shield.tokenizer_path) {
+        if let Err(e) = eidolon::engine::shield_model::ShieldEngine::init(model_path, tokenizer_path) {
+            tracing::warn!(
+                "Failed to load Shield ML model: {}. Shielding will fall back to regex only.",
+                e
+            );
+        }
+    }
+
     // ── Token-counting tokenizer (eagerly loaded from local file) ─────────
     if let Err(e) = eidolon::middleware::preflight::init_tokenizer(&config.nlp.tokenizer_path) {
         tracing::warn!(

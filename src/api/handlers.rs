@@ -28,6 +28,37 @@ fn unmask(mut text: String, substitutions: &[(String, String)]) -> String {
     strip_internal_notice(text)
 }
 
+/// Egress scan:
+/// 1. Unmask the prompt's synthetic IDs back to real data.
+/// 2. Protect that real data.
+/// 3. Run the redaction engine to catch *new* (hallucinated) PII.
+/// 4. Restore the protected original data.
+async fn egress_sanitize(
+    mut text: String,
+    state: &Arc<AppState>,
+    prompt_subs: &[(String, String)]
+) -> String {
+    text = unmask(text, prompt_subs);
+
+    let mut protected = Vec::new();
+    for (_fake, real) in prompt_subs {
+        let id = format!("<PROTECTED_{}>", uuid::Uuid::new_v4());
+        text = text.replace(real, &id);
+        protected.push((id, real.clone()));
+    }
+
+    let mut dummy_subs = Vec::new();
+    let (mut sanitized, _, _) = crate::middleware::redaction::sanitize_text_pub(&text, state, &mut dummy_subs)
+        .await
+        .unwrap_or((text.clone(), vec![], std::collections::HashMap::new()));
+
+    for (id, real) in protected {
+        sanitized = sanitized.replace(&id, &real);
+    }
+
+    sanitized
+}
+
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Health
@@ -210,6 +241,7 @@ pub async fn proxy_handler(
 
         let mut unredactor = StreamUnredactor::new(
             substitutions.iter().cloned().collect(),
+            state.clone(),
         );
 
         let sse_stream = async_stream::stream! {
@@ -218,7 +250,7 @@ pub async fn proxy_handler(
                 match item {
                     Ok(bytes) => {
                         let text = String::from_utf8_lossy(&bytes);
-                        let clean = unredactor.process(&text);
+                        let clean = unredactor.process(&text).await;
                         if !clean.is_empty() {
                             yield Ok::<_, axum::Error>(Event::default().data(clean));
                         }
@@ -229,7 +261,7 @@ pub async fn proxy_handler(
                     }
                 }
             }
-            let remaining = unredactor.flush();
+            let remaining = unredactor.flush().await;
             if !remaining.is_empty() {
                 yield Ok::<_, axum::Error>(Event::default().data(remaining));
             }
@@ -255,9 +287,10 @@ pub async fn proxy_handler(
     }
 
     let body_text = res.text().await?;
+    let safe_body = egress_sanitize(body_text, &state, &substitutions).await;
     Ok(Response::builder()
         .header("Content-Type", "application/json")
-        .body(Body::from(unmask(body_text, &substitutions)))
+        .body(Body::from(safe_body))
         .map_err(|_| AppError::Internal)?)
 }
 
@@ -265,7 +298,7 @@ pub async fn proxy_handler(
 
 async fn handle_gemini(
     client: &reqwest::Client,
-    _state: &AppState,
+    _state: &Arc<AppState>,
     payload: &OpenAIChatRequest,
     api_key: &axum::http::HeaderValue,
     substitutions: &[(String, String)],
@@ -300,9 +333,10 @@ async fn handle_gemini(
         .map_err(|_| AppError::Internal)?;
 
     let resp_json = serde_json::to_string(&openai_resp).map_err(AppError::Serialization)?;
+    let safe_body = egress_sanitize(resp_json, _state, substitutions).await;
     Ok(Response::builder()
         .header("Content-Type", "application/json")
-        .body(Body::from(unmask(resp_json, substitutions)))
+        .body(Body::from(safe_body))
         .map_err(|_| AppError::Internal)?)
 }
 
@@ -310,7 +344,7 @@ async fn handle_gemini(
 
 async fn handle_anthropic(
     client: &reqwest::Client,
-    _state: &AppState,
+    _state: &Arc<AppState>,
     payload: &OpenAIChatRequest,
     api_key: &axum::http::HeaderValue,
     substitutions: &[(String, String)],
@@ -348,9 +382,10 @@ async fn handle_anthropic(
         .map_err(|_| AppError::Internal)?;
 
     let resp_json = serde_json::to_string(&openai_resp).map_err(AppError::Serialization)?;
+    let safe_body = egress_sanitize(resp_json, _state, substitutions).await;
     Ok(Response::builder()
         .header("Content-Type", "application/json")
-        .body(Body::from(unmask(resp_json, substitutions)))
+        .body(Body::from(safe_body))
         .map_err(|_| AppError::Internal)?)
 }
 
@@ -385,7 +420,7 @@ pub async fn ollama_proxy_handler(
 
     if is_stream {
         let bytes_stream = res.bytes_stream();
-        let mut unredactor = StreamUnredactor::new(substitutions.iter().cloned().collect());
+        let mut unredactor = StreamUnredactor::new(substitutions.iter().cloned().collect(), state.clone());
 
         let body_stream = async_stream::stream! {
             tokio::pin!(bytes_stream);
@@ -393,7 +428,7 @@ pub async fn ollama_proxy_handler(
                 match item {
                     Ok(bytes) => {
                         let text = String::from_utf8_lossy(&bytes);
-                        let clean = unredactor.process(&text);
+                        let clean = unredactor.process(&text).await;
                         if !clean.is_empty() {
                             yield Ok::<_, axum::Error>(clean);
                         }
@@ -404,7 +439,7 @@ pub async fn ollama_proxy_handler(
                     }
                 }
             }
-            let remaining = unredactor.flush();
+            let remaining = unredactor.flush().await;
             if !remaining.is_empty() {
                 yield Ok::<_, axum::Error>(remaining);
             }
@@ -418,10 +453,11 @@ pub async fn ollama_proxy_handler(
     }
 
     let body_text = res.text().await?;
+    let safe_body = egress_sanitize(body_text, &state, &substitutions).await;
     Ok(Response::builder()
         .header("Content-Type", "application/json")
         .header("X-Eidolon-Proxy", "Active")
-        .body(Body::from(unmask(body_text, &substitutions)))
+        .body(Body::from(safe_body))
         .map_err(|_| AppError::Internal)?)
 }
 
@@ -458,7 +494,7 @@ pub async fn ollama_generate_handler(
 
     if is_stream {
         let bytes_stream = res.bytes_stream();
-        let mut unredactor = StreamUnredactor::new(substitutions.iter().cloned().collect());
+        let mut unredactor = StreamUnredactor::new(substitutions.iter().cloned().collect(), state.clone());
 
         let body_stream = async_stream::stream! {
             tokio::pin!(bytes_stream);
@@ -466,7 +502,7 @@ pub async fn ollama_generate_handler(
                 match item {
                     Ok(bytes) => {
                         let text = String::from_utf8_lossy(&bytes);
-                        let clean = unredactor.process(&text);
+                        let clean = unredactor.process(&text).await;
                         if !clean.is_empty() {
                             yield Ok::<_, axum::Error>(clean);
                         }
@@ -477,7 +513,7 @@ pub async fn ollama_generate_handler(
                     }
                 }
             }
-            let remaining = unredactor.flush();
+            let remaining = unredactor.flush().await;
             if !remaining.is_empty() {
                 yield Ok::<_, axum::Error>(remaining);
             }
@@ -491,9 +527,10 @@ pub async fn ollama_generate_handler(
     }
 
     let body_text = res.text().await?;
+    let safe_body = egress_sanitize(body_text, &state, &substitutions).await;
     Ok(Response::builder()
         .header("Content-Type", "application/json")
         .header("X-Eidolon-Proxy", "Active")
-        .body(Body::from(unmask(body_text, &substitutions)))
+        .body(Body::from(safe_body))
         .map_err(|_| AppError::Internal)?)
 }

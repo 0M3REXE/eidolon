@@ -1,34 +1,31 @@
 use std::collections::HashMap;
 use aho_corasick::AhoCorasick;
+use std::sync::Arc;
+use crate::state::AppState;
 
-/// A streaming unredactor that replaces synthetic IDs with real PII in real time.
-///
-/// Uses Aho-Corasick for O(n) multi-pattern matching even with many substitution
-/// keys. A small tail buffer is kept to handle tokens split across chunk boundaries.
+/// A streaming unredactor that replaces synthetic IDs with real PII in real time,
+/// and then runs egress DLP scanning on hallucinated text.
 pub struct StreamUnredactor {
-    /// Pre-built Aho-Corasick automaton over the fake (synthetic) keys.
     ac: Option<AhoCorasick>,
-    /// Ordered list of (fake, real) pairs matching the automaton's pattern order.
     pairs: Vec<(String, String)>,
-    /// Max length of any fake key — determines the minimum safe-to-emit prefix.
     max_key_len: usize,
-    /// Rolling buffer for incomplete tokens at chunk boundaries.
     buffer: String,
+    state: Arc<AppState>,
 }
 
 impl StreamUnredactor {
-    pub fn new(substitutions: HashMap<String, String>) -> Self {
+    pub fn new(substitutions: Vec<(String, String)>, state: Arc<AppState>) -> Self {
         if substitutions.is_empty() {
             return Self {
                 ac: None,
                 pairs: vec![],
                 max_key_len: 0,
                 buffer: String::new(),
+                state,
             };
         }
 
-        let pairs: Vec<(String, String)> = substitutions.into_iter().collect();
-        let fakes: Vec<&str> = pairs.iter().map(|(f, _)| f.as_str()).collect();
+        let fakes: Vec<&str> = substitutions.iter().map(|(f, _)| f.as_str()).collect();
         let max_key_len = fakes.iter().map(|s| s.len()).max().unwrap_or(0);
 
         let ac = AhoCorasick::builder()
@@ -36,53 +33,105 @@ impl StreamUnredactor {
             .build(fakes)
             .ok();
 
-        Self { ac, pairs, max_key_len, buffer: String::new() }
+        Self { ac, pairs: substitutions, max_key_len, buffer: String::new(), state }
     }
 
-    /// Process a new chunk of text and return the safe-to-emit portion with all
-    /// complete synthetic IDs replaced by their real values.
-    pub fn process(&mut self, chunk: &str) -> String {
-        if self.ac.is_none() {
-            return chunk.to_string();
-        }
-
+    pub async fn process(&mut self, chunk: &str) -> String {
         self.buffer.push_str(chunk);
 
-        // Replace all complete matches in the buffer using the Aho-Corasick automaton.
-        let reals: Vec<&str> = self.pairs.iter().map(|(_, r)| r.as_str()).collect();
-        let replaced = self.ac.as_ref().unwrap().replace_all(&self.buffer, &reals);
+        // 1. Replace all complete matches in the buffer
+        let replaced = if let Some(ac) = &self.ac {
+            let reals: Vec<&str> = self.pairs.iter().map(|(_, r)| r.as_str()).collect();
+            ac.replace_all(&self.buffer, &reals)
+        } else {
+            self.buffer.clone()
+        };
         self.buffer = replaced;
 
-        // Determine how many bytes of the buffer are "safe" to emit — i.e., no
-        // suffix of the buffer is a prefix of any fake key (partial match risk).
+        // 2. Determine safe_len (safe from synthetic ID splitting).
         let mut safe_len = self.buffer.len();
-
-        for (fake, _) in &self.pairs {
-            let check_len = self.max_key_len.min(self.buffer.len());
-            let tail = &self.buffer[self.buffer.len() - check_len..];
-
-            // Find the longest suffix of `tail` that is a prefix of `fake`.
-            for i in 0..tail.len() {
-                let suffix = &tail[i..];
-                if fake.starts_with(suffix) {
-                    let match_start = self.buffer.len() - suffix.len();
-                    if match_start < safe_len {
-                        safe_len = match_start;
+        if self.ac.is_some() {
+            for (fake, _) in &self.pairs {
+                let check_len = self.max_key_len.min(self.buffer.len());
+                let tail = &self.buffer[self.buffer.len() - check_len..];
+                for i in 0..tail.len() {
+                    let suffix = &tail[i..];
+                    if fake.starts_with(suffix) {
+                        let match_start = self.buffer.len() - suffix.len();
+                        if match_start < safe_len {
+                            safe_len = match_start;
+                        }
+                        break;
                     }
-                    break; // Longest suffix match found for this key.
                 }
             }
         }
 
-        let to_emit = self.buffer[..safe_len].to_string();
+        // 3. To safely run regex on streams, we should also align safe_len to a word boundary
+        // to prevent splitting hallucinated PII (e.g. an email address) in half.
+        if safe_len > 0 && safe_len < self.buffer.len() {
+            let prefix = &self.buffer[..safe_len];
+            if let Some(last_ws) = prefix.rfind(|c: char| c.is_whitespace() || c == '\n') {
+                safe_len = last_ws + 1; // Include the whitespace
+            } else {
+                // If it's a huge block of text without spaces, force break at 100 chars
+                if safe_len > 100 {
+                    safe_len -= 50; 
+                } else {
+                    return String::new(); // wait for more context
+                }
+            }
+        }
+
+        let mut to_emit = self.buffer[..safe_len].to_string();
         self.buffer = self.buffer[safe_len..].to_string();
-        to_emit
+
+        if to_emit.is_empty() {
+            return String::new();
+        }
+
+        // 4. Egress DLP scan
+        let mut protected = Vec::new();
+        for (_fake, real) in &self.pairs {
+            let id = format!("<PROTECTED_{}>", uuid::Uuid::new_v4());
+            to_emit = to_emit.replace(real, &id);
+            protected.push((id, real.clone()));
+        }
+
+        let mut dummy = Vec::new();
+        let (mut sanitized, _, _) = crate::middleware::redaction::sanitize_text_pub(&to_emit, &self.state, &mut dummy)
+            .await
+            .unwrap_or((to_emit.clone(), vec![], std::collections::HashMap::new()));
+
+        for (id, real) in protected {
+            sanitized = sanitized.replace(&id, &real);
+        }
+
+        sanitized
     }
 
-    /// Flush remaining buffer at end of stream.
-    pub fn flush(&mut self) -> String {
-        // Any remaining content in the buffer is incomplete by definition, but
-        // the stream has ended — emit it as-is (partial synthetic IDs are rare).
-        std::mem::take(&mut self.buffer)
+    pub async fn flush(&mut self) -> String {
+        let mut to_emit = std::mem::take(&mut self.buffer);
+        if to_emit.is_empty() {
+            return String::new();
+        }
+
+        let mut protected = Vec::new();
+        for (_fake, real) in &self.pairs {
+            let id = format!("<PROTECTED_{}>", uuid::Uuid::new_v4());
+            to_emit = to_emit.replace(real, &id);
+            protected.push((id, real.clone()));
+        }
+
+        let mut dummy = Vec::new();
+        let (mut sanitized, _, _) = crate::middleware::redaction::sanitize_text_pub(&to_emit, &self.state, &mut dummy)
+            .await
+            .unwrap_or((to_emit.clone(), vec![], std::collections::HashMap::new()));
+
+        for (id, real) in protected {
+            sanitized = sanitized.replace(&id, &real);
+        }
+
+        sanitized
     }
 }

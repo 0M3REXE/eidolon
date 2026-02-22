@@ -76,6 +76,22 @@ pub async fn pre_flight_middleware(
             return blocked_response(phrase);
         }
 
+        // ML Shield check
+        match crate::engine::shield_model::ShieldEngine::is_injection(&body_str) {
+            Ok(true) => {
+                warn!(
+                    shield = true,
+                    "SHIELD: ML Model detected prompt injection / jailbreak attempt"
+                );
+                metrics::counter!("eidolon_shield_blocked_total", "reason" => "ml_prompt_injection").increment(1);
+                return blocked_response("ML Shield detected adversarial intent");
+            }
+            Ok(false) => {} // safe
+            Err(e) => {
+                tracing::debug!("ML Shield execution error: {}", e);
+            }
+        }
+
         // ── 3. Token limit check ───────────────────────────────────────────
         let token_count = count_tokens(&body_str);
         if token_count > MAX_PROMPT_TOKENS {

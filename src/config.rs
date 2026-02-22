@@ -16,10 +16,67 @@ pub struct RedisConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct SecurityConfig {
+    #[serde(default = "default_false")]
     pub fail_open: bool,
     /// 32-character secret used for AES-256-GCM encryption of Redis PII values.
     /// Override via SECURITY__ENCRYPTION_KEY env var.
     pub encryption_key: String,
+}
+
+fn default_false() -> bool { false }
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct PolicyConfig {
+    #[serde(default = "default_true")]
+    pub redact_email: bool,
+    #[serde(default = "default_true")]
+    pub redact_cc: bool,
+    #[serde(default = "default_true")]
+    pub redact_ip: bool,
+    #[serde(default = "default_true")]
+    pub redact_ssn: bool,
+    #[serde(default = "default_true")]
+    pub redact_apikey: bool,
+    #[serde(default = "default_true")]
+    pub redact_ner_person: bool,
+    #[serde(default = "default_true")]
+    pub redact_ner_location: bool,
+    #[serde(default = "default_true")]
+    pub redact_ner_org: bool,
+}
+
+impl Default for PolicyConfig {
+    fn default() -> Self {
+        Self {
+            redact_email: true,
+            redact_cc: true,
+            redact_ip: true,
+            redact_ssn: true,
+            redact_apikey: true,
+            redact_ner_person: true,
+            redact_ner_location: true,
+            redact_ner_org: true,
+        }
+    }
+}
+
+fn default_true() -> bool { true }
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct PromptInjectionConfig {
+    #[serde(default)]
+    pub model_path: Option<String>,
+    #[serde(default)]
+    pub tokenizer_path: Option<String>,
+}
+
+impl Default for PromptInjectionConfig {
+    fn default() -> Self {
+        Self {
+            model_path: None,
+            tokenizer_path: None,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -63,6 +120,10 @@ pub struct Config {
     pub ollama: OllamaConfig,
     pub rate_limit: RateLimitConfig,
     pub nlp: NlpConfig,
+    #[serde(default)]
+    pub policy: PolicyConfig,
+    #[serde(default)]
+    pub shield: PromptInjectionConfig,
     #[serde(default)]
     pub custom: Vec<CustomPattern>,
 }

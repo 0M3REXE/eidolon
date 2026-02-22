@@ -92,7 +92,7 @@ impl AnthropicRequest {
         // Extract a leading system message if present.
         let system = messages.iter().find(|m| m.role == "system").map(|m| {
             match &m.content {
-                serde_json::Value::String(s) => s.clone(),
+                Some(crate::api::models::ChatMessageContent::Text(s)) => s.clone(),
                 _ => String::new(),
             }
         });
@@ -102,8 +102,8 @@ impl AnthropicRequest {
             .filter(|m| m.role != "system")
             .map(|m| {
                 let content = match &m.content {
-                    serde_json::Value::String(s) => AnthropicContent::Text(s.clone()),
-                    serde_json::Value::Array(arr) => {
+                    Some(crate::api::models::ChatMessageContent::Text(s)) => AnthropicContent::Text(s.clone()),
+                    Some(crate::api::models::ChatMessageContent::Parts(arr)) => {
                         let blocks = arr.iter().filter_map(|v| {
                             if v.get("type")?.as_str()? == "text" {
                                 Some(AnthropicBlock {
@@ -116,7 +116,7 @@ impl AnthropicRequest {
                         }).collect();
                         AnthropicContent::Blocks(blocks)
                     }
-                    _ => AnthropicContent::Text(String::new()),
+                    None => AnthropicContent::Text(String::new()),
                 };
                 AnthropicMessage {
                     role: m.role.clone(),
@@ -161,7 +161,7 @@ impl OpenAIChatResponse {
                 index: 0,
                 message: OpenAIChatMessage {
                     role: "assistant".to_string(),
-                    content: serde_json::Value::String(text),
+                    content: Some(crate::api::models::ChatMessageContent::Text(text)),
                     name: None,
                     unknown_fields: Default::default(),
                 },

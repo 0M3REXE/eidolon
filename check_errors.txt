@@ -1,0 +1,120 @@
+    Checking eidolon v0.1.0 (C:\Users\OMER\Desktop\Eidolon)
+warning: unused import: `std::collections::HashMap`
+ --> src\middleware\streaming.rs:1:5
+  |
+1 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+error[E0308]: mismatched types
+   --> src\api\handlers.rs:336:48
+    |
+336 |     let safe_body = egress_sanitize(resp_json, _state, substitutions).await;
+    |                     ---------------            ^^^^^^ expected `&Arc<AppState>`, found `&AppState`
+    |                     |
+    |                     arguments to this function are incorrect
+    |
+    = note: expected reference `&Arc<AppState>`
+               found reference `&AppState`
+note: function defined here
+   --> src\api\handlers.rs:36:10
+    |
+ 36 | async fn egress_sanitize(
+    |          ^^^^^^^^^^^^^^^
+ 37 |     mut text: String,
+ 38 |     state: &Arc<AppState>,
+    |     ---------------------
+
+error[E0308]: mismatched types
+   --> src\api\handlers.rs:385:48
+    |
+385 |     let safe_body = egress_sanitize(resp_json, _state, substitutions).await;
+    |                     ---------------            ^^^^^^ expected `&Arc<AppState>`, found `&AppState`
+    |                     |
+    |                     arguments to this function are incorrect
+    |
+    = note: expected reference `&Arc<AppState>`
+               found reference `&AppState`
+note: function defined here
+   --> src\api\handlers.rs:36:10
+    |
+ 36 | async fn egress_sanitize(
+    |          ^^^^^^^^^^^^^^^
+ 37 |     mut text: String,
+ 38 |     state: &Arc<AppState>,
+    |     ---------------------
+
+error[E0599]: no variant or associated item named `Multimodal` found for enum `ChatMessageContent` in the current scope
+  --> src\api\gemini.rs:72:62
+   |
+72 |                 Some(crate::api::models::ChatMessageContent::Multimodal(arr)) => {
+   |                                                              ^^^^^^^^^^ variant or associated item not found in `ChatMessageContent`
+   |
+  ::: src\api\models.rs:5:1
+   |
+ 5 | pub enum ChatMessageContent {
+   | --------------------------- variant or associated item `Multimodal` not found for this enum
+
+error[E0282]: type annotations needed
+  --> src\api\gemini.rs:75:44
+   |
+75 |                         if let Some(obj) = item.as_object() {
+   |                                            ^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+  --> src\api\gemini.rs:76:46
+   |
+76 | ...                   if let Some(t) = obj.get("type").and_then(|v| v.as_str()) {
+   |                                        ^^^ cannot infer type
+
+error[E0282]: type annotations needed
+  --> src\api\gemini.rs:76:72
+   |
+76 | ...                   if let Some(t) = obj.get("type").and_then(|v| v.as_str()) {
+   |                                                                  ^  - type must be known at this point
+   |
+help: consider giving this closure parameter an explicit type
+   |
+76 |                             if let Some(t) = obj.get("type").and_then(|v: /* Type */| v.as_str()) {
+   |                                                                         ++++++++++++
+
+error[E0282]: type annotations needed
+  --> src\api\gemini.rs:78:82
+   |
+78 | ...                   if let Some(val) = obj.get("text").and_then(|v| v.as_str()) {
+   |                                                                    ^  - type must be known at this point
+   |
+help: consider giving this closure parameter an explicit type
+   |
+78 |                                     if let Some(val) = obj.get("text").and_then(|v: /* Type */| v.as_str()) {
+   |                                                                                   ++++++++++++
+
+error[E0599]: no variant or associated item named `Multimodal` found for enum `ChatMessageContent` in the current scope
+   --> src\api\anthropic.rs:106:66
+    |
+106 |                     Some(crate::api::models::ChatMessageContent::Multimodal(arr)) => {
+    |                                                                  ^^^^^^^^^^ variant or associated item not found in `ChatMessageContent`
+    |
+   ::: src\api\models.rs:5:1
+    |
+  5 | pub enum ChatMessageContent {
+    | --------------------------- variant or associated item `Multimodal` not found for this enum
+
+error[E0282]: type annotations needed
+   --> src\api\anthropic.rs:107:61
+    |
+107 |                         let blocks = arr.iter().filter_map(|v| {
+    |                                                             ^
+108 |                             if v.get("type")?.as_str()? == "text" {
+    |                                - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+107 |                         let blocks = arr.iter().filter_map(|v: /* Type */| {
+    |                                                              ++++++++++++
+
+Some errors have detailed explanations: E0282, E0308, E0599.
+For more information about an error, try `rustc --explain E0282`.
+warning: `eidolon` (lib) generated 1 warning
+error: could not compile `eidolon` (lib) due to 9 previous errors; 1 warning emitted

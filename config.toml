@@ -29,3 +29,17 @@ burst_size = 10
 [nlp]
 model_path = "assets/bert-ner-quantized.onnx"
 tokenizer_path = "assets/tokenizer.json"
+
+[policy]
+redact_email = true
+redact_cc = true
+redact_ip = true
+redact_ssn = true
+redact_apikey = true
+redact_ner_person = true
+redact_ner_location = true
+redact_ner_org = true
+
+[shield]
+# model_path = "assets/deberta-v3-base-prompt-injection.onnx"
+# tokenizer_path = "assets/shield-tokenizer.json"
