@@ -1,20 +1,34 @@
 # Eidolon PII Redaction Proxy
 
+![Build Status](https://img.shields.io/badge/build-passing-brightgreen) ![Docker Pulls](https://img.shields.io/badge/docker-ghcr.io%2F0m3rexe%2Feidolon-blue) ![Rust](https://img.shields.io/badge/rust-1.82%2B-orange) ![License](https://img.shields.io/badge/license-MIT-green)
+
 **Enterprise-Grade, Zero-Trust LLM Security Gateway**
 
 Eidolon is a high-performance reverse proxy designed to secure Large Language Model (LLM) interactions. It intercepts outgoing prompts to providers like OpenAI, Anthropic, or Google, automatically detects and redacts Personally Identifiable Information (PII) using a hybrid engine, and restores the original data in the response—all within your secure perimeter.
 
-Built in **Rust**, Eidolon offers sub-millisecond overhead and creates an airtight privacy layer for your AI applications.
+Built in **Rust**, Eidolon offers sub-millisecond overhead and creates an airtight privacy layer for your AI applications, ensuring compliance and data sovereignty without sacrificing speed.
 
 ---
 
-## 🛡️ Why Eidolon? (Competitive Advantage)
+## How It Works
 
-Unlike SaaS-based redaction APIs that require sending sensitive data to yet another third party, Eidolon runs entirely on your infrastructure (or localhost).
+
+
+1. **Intercept:** Your application sends a standard LLM API request to Eidolon instead of the provider.
+2. **Redact:** Eidolon scans the prompt, replacing PII with secure tokens (e.g., `John Doe` -> `[PER_1]`).
+3. **Store:** The mapping is temporarily securely stored in a local Redis instance.
+4. **Forward:** The sanitized prompt is sent to the LLM.
+5. **Restore:** The LLM's response is intercepted, and tokens are swapped back to the original PII before reaching your application.
+
+---
+
+## Why Eidolon? (Competitive Advantage)
+
+Unlike SaaS-based redaction APIs that require sending sensitive data to yet another third party, Eidolon runs entirely on your infrastructure. 
 
 | Feature | Eidolon | SaaS Redaction Services | Naive Regex |
 | :--- | :--- | :--- | :--- |
-| **Data Sovereignty** | **100% Local** (Data never leaves your VPC) | **Trust-Based** (They process your PII) | Local |
+| **Data Sovereignty** | **100% Local** (Data never leaves your VPC) | Trust-Based (They process your PII) | Local |
 | **Detection Engine** | **Hybrid** (Regex Speed + BERT Accuracy) | AI-Only (Often slow/costly) | Regex-Only (High false positives) |
 | **Re-Identification** | **Context-Aware De-tokenization** | Often One-Way Redaction | ❌ One-Way |
 | **Performance** | **<10ms Latency** (Rust + ONNX Runtime) | >500ms (Network Hops) | <1ms |
@@ -22,44 +36,38 @@ Unlike SaaS-based redaction APIs that require sending sensitive data to yet anot
 
 ---
 
-## 🚀 Key Capabilities
+## Key Capabilities
 
 ### 1. Hybrid Detection Engine
-Eidolon combines the speed of compiled Regex with the contextual understanding of a local NLP model (BERT).
-- **Instant Regex**: Detecting structured data like Email, SSN, Credit Cards, IPv4, API Keys.
-- **Contextual NLP**: Detecting unstructured entities like Person Names (PER), Locations (LOC), and Organizations (ORG).
+Eidolon combines the sheer speed of compiled Regex with the contextual understanding of a local NLP model (BERT).
+- **Instant Regex**: Detects structured data (Emails, SSNs, Credit Cards, IPv4, API Keys).
+- **Contextual NLP**: Detects unstructured entities (Person Names, Locations, Organizations).
 
 ### 2. Transparent Re-Identification
-The proxy maintains a temporary, stateful mapping (in Redis) of redacted entities.
-- **Request**: "Call John Doe at 555-0199" -> LLM sees "Call PER_82a1 at PHONE_9b2c".
-- **Response**: LLM says "Calling PER_82a1..." -> App receives "Calling John Doe...".
+The proxy maintains a temporary, stateful mapping in Redis.
+- **Request**: `"Call John Doe at 555-0199"` -> LLM sees `"Call PER_82a1 at PHONE_9b2c"`.
+- **Response**: LLM says `"Calling PER_82a1..."` -> App receives `"Calling John Doe..."`.
 
 ### 3. Custom Enterprise Rules
-Define domain-specific redaction rules in `config.toml` without code changes.
+Define domain-specific redaction rules in `config.toml` without touching the codebase.
 ```toml
 [[custom]]
 name = "Internal Project ID"
 pattern = '\bPROJ-\d{4}\b'  # Matches PROJ-1234
 replacement = "PROJECT_ID"
 ```
+### 4. Vendor Agnostic Drop-in Replacement
 
-### 4. Vendor Agnostic
-Works with any client compatible with the OpenAI API format.
-- Seamlessly drop into existing Python/Node.js/Go applications.
-- Supports automatic routing for Google Gemini models.
+Works with any client compatible with the OpenAI API format. Simply change the base_url in your existing Python, Node.js, or Go applications.
 
 ---
 
-## 🐳 Docker Deployment
+## Quick Start (Docker)
 
-Eidolon is designed for containerized environments (Kubernetes, ECS, Docker Compose).
+Eidolon is designed for containerized environments (Kubernetes, ECS, Docker Compose). The embedded NLP model means zero external dependencies aside from Redis.
 
-### Rapid Deployment (GHCR)
-
-Use our pre-built, optimized Docker image from the private GitHub Container Registry.
-
-**1. Create `docker-compose.yml`**
-```yaml
+### 1. Create docker-compose.yml
+```
 version: '3.8'
 services:
   eidolon:
@@ -67,9 +75,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      # Configure via Env Vars for security
-      - REDIS__URL=redis://redis:6379
-      - RUST_LOG=info
+      - EIDOLON__REDIS__URL=redis://redis:6379
+      - EIDOLON__LOGGING__LEVEL=info
     depends_on:
       - redis
 
@@ -82,42 +89,9 @@ volumes:
   redis-data:
 ```
 
-**2. Start the Service**
-```powershell
+### 2. Start the Gateway
+```bash
 docker-compose up -d
 ```
-The secure gateway is now active at `http://localhost:3000`.
 
-### Production Considerations
-
-- **Stateless Architecture**: The proxy itself is stateless. Scale it horizontally (e.g., 10 replicas) behind a load balancer.
-- **Unified State**: All instances share the Redis backend for consistent de-tokenization.
-- **Zero External Dependencies**: The NLP model is embedded in the Docker image. No external API calls are made for redaction.
-
----
-
-## 🛠️ Configuration Reference
-
-Configuration can be set via `config.toml` or Environment Variables (prefixed with `EIDOLON__`).
-
-| Environment Variable | TOML Key | Description | Default |
-| :--- | :--- | :--- | :--- |
-| `EIDOLON__SERVER__PORT` | `server.port` | Port to listen on | `3000` |
-| `EIDOLON__REDIS__URL` | `state.redis_url` | Redis connection string | `redis://127.0.0.1:6379` |
-| `EIDOLON__LOGGING__LEVEL` | `logging.level` | Log verbosity | `info` |
-
----
-
-## 📦 Building from Source
-
-To build a production-optimized binary manually:
-
-```powershell
-# 1. Build
-cargo build --release
-
-# 2. Run
-./target/release/eidolon
-```
-
-*Requires Rust 1.82+ due to modern dependency requirements.*
+Eidolon is now actively protecting your traffic at http://localhost:3000.
