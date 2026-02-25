@@ -7,7 +7,7 @@
 
 Eidolon is a high-performance reverse proxy that secures Large Language Model interactions. It intercepts outgoing prompts to providers like **OpenAI**, **Google Gemini**, **Anthropic Claude**, and **Ollama**, automatically detects and redacts Personally Identifiable Information (PII) using a hybrid engine, and restores the original data in the response — all within your secure perimeter.
 
-Built in Rust, Eidolon offers sub-millisecond regex overhead and creates an airtight privacy layer for your AI applications, ensuring data sovereignty without sacrificing speed.
+Built in Rust, Eidolon offers sub-millisecond regex overhead and creates an airtight privacy layer for your AI applications, protecting sensitive data without sacrificing speed.
 
 ---
 
@@ -91,7 +91,7 @@ A multi-layer defense against adversarial prompts:
 - **Unicode normalization** — NFKC normalization + zero-width character stripping defeats homoglyph and invisible-character attacks.
 - **ML Shield** (optional) — A DeBERTa-based classifier for detecting prompt injection attempts.
 
-### 5. Custom Enterprise Rules
+### 5. Custom Rules
 
 Define domain-specific redaction rules in `config.toml` without touching the codebase:
 
@@ -368,6 +368,12 @@ src/
     ├── faker.rs               # Realistic fake data generation
     └── response.rs            # Strip leaked system-prompt blocks
 ```
+
+---
+
+## Disclaimer
+
+Eidolon is a **technical privacy layer**, not a compliance certification. In industries where regulations prohibit any external data transmission — regardless of redaction — deploy Eidolon with **self-hosted models** (e.g., Ollama) to keep all data within your infrastructure. Always consult your legal/compliance team before deploying in regulated environments.
 
 ---
 
