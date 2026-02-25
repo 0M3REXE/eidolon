@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use aho_corasick::AhoCorasick;
 use std::sync::Arc;
 use crate::state::AppState;

@@ -48,18 +48,43 @@ pub fn luhn_check(number: &str) -> bool {
 }
 
 // ── IPv4 ──────────────────────────────────────────────────────────────────
+//  Validates each octet is 0-255 instead of blindly matching any 1-3 digits.
 pub static IPV4_REGEX: OnceLock<Regex> = OnceLock::new();
 pub fn ipv4_regex() -> &'static Regex {
     IPV4_REGEX.get_or_init(|| {
-        Regex::new(r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b").expect("Invalid IPv4 Regex")
+        Regex::new(
+            r"\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b"
+        ).expect("Invalid IPv4 Regex")
     })
 }
 
 // ── SSN ───────────────────────────────────────────────────────────────────
+//  Matches US SSNs in both dashed (123-45-6789) and dashless (123456789)
+//  formats, plus UK NINOs (AB123456C).
 pub static SSN_REGEX: OnceLock<Regex> = OnceLock::new();
 pub fn ssn_regex() -> &'static Regex {
     SSN_REGEX.get_or_init(|| {
-        Regex::new(r"\b\d{3}-\d{2}-\d{4}\b").expect("Invalid SSN Regex")
+        Regex::new(concat!(
+            r"(?:",
+            r"\b\d{3}-\d{2}-\d{4}\b",             // US SSN dashed
+            r"|\b\d{9}\b",                          // US SSN dashless
+            r"|\b[A-CEGHJ-PR-TW-Z]{2}\d{6}[A-D]\b", // UK NINO
+            r")",
+        )).expect("Invalid SSN Regex")
+    })
+}
+
+// ── Phone Number ─────────────────────────────────────────────────────────
+//  Catches common phone formats: +1-234-567-8901, (234) 567-8901, etc.
+pub static PHONE_REGEX: OnceLock<Regex> = OnceLock::new();
+pub fn phone_regex() -> &'static Regex {
+    PHONE_REGEX.get_or_init(|| {
+        Regex::new(concat!(
+            r"(?:",
+            r"\+?\d{1,3}[-.\s]?\(?\d{2,3}\)?[-.\s]?\d{3,4}[-.\s]?\d{4}",  // international
+            r"|\(\d{3}\)\s?\d{3}[-.\s]?\d{4}",                              // (xxx) xxx-xxxx
+            r")",
+        )).expect("Invalid Phone Regex")
     })
 }
 
@@ -159,14 +184,34 @@ mod tests {
         let re = ipv4_regex();
         assert!(re.is_match("192.168.1.1"));
         assert!(re.is_match("10.0.0.1"));
-        assert!(!re.is_match("192.168.1"));
+        assert!(re.is_match("255.255.255.255"));
+        assert!(re.is_match("0.0.0.0"));
+        assert!(!re.is_match("192.168.1"));     // incomplete
+        assert!(!re.is_match("999.999.999.999")); // invalid octets
+        assert!(!re.is_match("256.1.1.1"));       // octet > 255
     }
 
     #[test]
     fn test_ssn_regex() {
         let re = ssn_regex();
+        // US dashed
         assert!(re.is_match("123-45-6789"));
-        assert!(!re.is_match("123-45-678"));
+        // US dashless
+        assert!(re.is_match("123456789"));
+        // UK NINO
+        assert!(re.is_match("AB123456C"));
+        // Should NOT match
+        assert!(!re.is_match("123-45-678"));  // too short
+        assert!(!re.is_match("12345678"));    // 8 digits
+    }
+
+    #[test]
+    fn test_phone_regex() {
+        let re = phone_regex();
+        assert!(re.is_match("+1-234-567-8901"));
+        assert!(re.is_match("(234) 567-8901"));
+        assert!(re.is_match("+44 20 7946 0958"));
+        assert!(!re.is_match("12345"));          // too short
     }
 
     #[test]

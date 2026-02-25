@@ -38,6 +38,8 @@ pub struct PolicyConfig {
     #[serde(default = "default_true")]
     pub redact_apikey: bool,
     #[serde(default = "default_true")]
+    pub redact_phone: bool,
+    #[serde(default = "default_true")]
     pub redact_ner_person: bool,
     #[serde(default = "default_true")]
     pub redact_ner_location: bool,
@@ -53,6 +55,7 @@ impl Default for PolicyConfig {
             redact_ip: true,
             redact_ssn: true,
             redact_apikey: true,
+            redact_phone: true,
             redact_ner_person: true,
             redact_ner_location: true,
             redact_ner_org: true,

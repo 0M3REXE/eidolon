@@ -37,6 +37,17 @@ async fn main() -> anyhow::Result<()> {
         .await
         .expect("Failed to connect to Redis");
 
+    // ── Security sanity check ──────────────────────────────────────────────
+    if config.security.encryption_key == "change-me-to-32-char-secret-!!!!"
+        || config.security.encryption_key.len() < 16
+    {
+        tracing::warn!(
+            "⚠️  SECURITY WARNING: encryption_key is set to the default or is too short. \
+             All PII in Redis is encrypted with a publicly known key. \
+             Set SECURITY__ENCRYPTION_KEY to a strong 32+ character secret before deploying."
+        );
+    }
+
     // ── HTTP Client (per-upstream pool tuning) ─────────────────────────────
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(120))

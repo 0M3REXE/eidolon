@@ -153,6 +153,7 @@ pub async fn redact_request_middleware(
             pii_ssn    = pii_counts.get("SSN").copied().unwrap_or(0),
             pii_ip     = pii_counts.get("IP").copied().unwrap_or(0),
             pii_apikey = pii_counts.get("APIKEY").copied().unwrap_or(0),
+            pii_phone  = pii_counts.get("PHONE").copied().unwrap_or(0),
             pii_ner    = pii_counts.get("NER").copied().unwrap_or(0),
             pii_total  = total_pii,
             "pii_redaction_complete"
@@ -243,6 +244,7 @@ async fn sanitize_text(
     redact_pattern!(config.policy.redact_cc,     patterns::credit_card_regex(), "CC",     "CC");
     redact_pattern!(config.policy.redact_ip,     patterns::ipv4_regex(),        "IP",     "IP");
     redact_pattern!(config.policy.redact_apikey, patterns::api_key_regex(),     "APIKEY", "APIKEY");
+    redact_pattern!(config.policy.redact_phone,  patterns::phone_regex(),       "PHONE",  "PHONE");
     redact_pattern!(config.policy.redact_ssn,    patterns::ssn_regex(),         "SSN",    "SSN");
 
     // ── Custom Regex Patterns ──────────────────────────────────────────────
@@ -349,6 +351,7 @@ async fn get_or_create_synthetic(
         "EMAIL" => crate::utils::faker::get_fake_email(),
         "PER"   => crate::utils::faker::get_fake_name(),
         "IP"    => crate::utils::faker::get_fake_ip(),
+        "PHONE" => crate::utils::faker::get_fake_phone(),
         _       => generate_synthetic_id(real_data, category),
     };
 
