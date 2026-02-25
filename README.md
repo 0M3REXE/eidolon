@@ -3,7 +3,7 @@
 [![Rust](https://img.shields.io/badge/Built%20with-Rust-orange?logo=rust)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-**Enterprise-Grade, Zero-Trust LLM Security Gateway**
+**Zero-Trust LLM Security Gateway**
 
 Eidolon is a high-performance reverse proxy that secures Large Language Model interactions. It intercepts outgoing prompts to providers like **OpenAI**, **Google Gemini**, **Anthropic Claude**, and **Ollama**, automatically detects and redacts Personally Identifiable Information (PII) using a hybrid engine, and restores the original data in the response — all within your secure perimeter.
 
