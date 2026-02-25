@@ -95,3 +95,65 @@ docker-compose up -d
 ```
 
 Eidolon is now actively protecting your traffic at http://localhost:3000.
+
+# Usage Example
+
+Once Eidolon is running, point your existing LLM SDKs to the proxy.
+
+Python (OpenAI SDK)
+
+```python
+from openai import OpenAI
+
+# 1. Point the client to Eidolon's local port
+# 2. Your actual API key is securely passed through to the provider
+client = OpenAI(
+    base_url="http://localhost:3000/v1", 
+    api_key="sk-your-actual-openai-key"
+)
+
+response = client.chat.completions.create(
+    model="gpt-4",
+    messages=[
+        {"role": "user", "content": "Draft an email to John.Doe@company.com discussing our Q4 revenue."}
+    ]
+)
+
+print(response.choices[0].message.content)
+```
+### The LLM never saw the real name or email, but you get the seamlessly restored output!
+
+| Environment Variable | TOML Key | Description | Default |
+| :--- | :--- | :--- | :--- |
+| `EIDOLON__SERVER__PORT` | `server.port` | Port to listen on | `3000` |
+| `EIDOLON__REDIS__URL` | `state.redis_url` | Redis connection string | `redis://127.0.0.1:6379` |
+| `EIDOLON__LOGGING__LEVEL` | `logging.level` | Log verbosity (debug, info, warn) | `info` |
+
+# Building from Source
+
+To build a production-optimized binary manually:
+```
+# 1. Clone the repository
+git clone [https://github.com/0m3rexe/eidolon.git](https://github.com/0m3rexe/eidolon.git)
+cd eidolon
+
+# 2. Build the release binary
+cargo build --release
+
+# 3. Run the gateway
+./target/release/eidolon
+```
+
+Note: Requires Rust 1.82+.
+
+# Contributing
+
+Pull requests are welcome! For major changes, please open an issue first to discuss what you would like to change. Please ensure to update tests as appropriate.
+
+# Support & Contact
+
+If you encounter any issues, have questions, or want to suggest a feature, please open an issue on GitHub.
+
+License
+
+This project is licensed under the Apache 2.0 License.
