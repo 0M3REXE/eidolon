@@ -1,6 +1,6 @@
 # Eidolon PII Redaction Proxy
 
-![Build Status](https://img.shields.io/badge/build-passing-brightgreen) ![Docker Pulls](https://img.shields.io/badge/docker-ghcr.io%2F0m3rexe%2Feidolon-blue) ![Rust](https://img.shields.io/badge/rust-1.82%2B-orange) ![License](https://img.shields.io/badge/license-MIT-green)
+![Build Status](https://img.shields.io/badge/build-passing-brightgreen) ![Docker Pulls](https://img.shields.io/badge/docker-ghcr.io%2F0m3rexe%2Feidolon-blue) ![Rust](https://img.shields.io/badge/rust-1.82%2B-orange) ![License](https://img.shields.io/badge/license-MIT-green) 
 
 **Enterprise-Grade, Zero-Trust LLM Security Gateway**
 
@@ -154,6 +154,8 @@ Pull requests are welcome! For major changes, please open an issue first to disc
 
 If you encounter any issues, have questions, or want to suggest a feature, please open an issue on GitHub.
 
-License
+# License
 
 This project is licensed under the Apache 2.0 License.
+
+![Visitor Count](https://komarev.com/ghpvc/?username=0M3REXE&repo=eidolon&style=for-the-badge&color=brightgreen)
