@@ -16,7 +16,16 @@ pub struct RedisState {
 
 impl RedisState {
     pub async fn new(config: &RedisConfig, encryption_key: &str) -> Result<Self> {
-        info!("Connecting to Redis at {}", config.url);
+        let log_url = if let Some((auth, rest)) = config.url.rsplit_once('@') {
+            if let Some((scheme, _)) = auth.split_once("://") {
+                format!("{}://***:***@{}", scheme, rest)
+            } else {
+                "***redacted***".to_string()
+            }
+        } else {
+            config.url.clone()
+        };
+        info!("Connecting to Redis at {}", log_url);
         let client = Client::open(config.url.as_str())?;
 
         let conn_manager = client.get_connection_manager().await.map_err(|e| {

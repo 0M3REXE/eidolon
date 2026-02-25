@@ -47,10 +47,7 @@ async fn egress_sanitize(
         protected.push((id, real.clone()));
     }
 
-    let mut dummy_subs = Vec::new();
-    let (mut sanitized, _, _) = crate::middleware::redaction::sanitize_text_pub(&text, state, &mut dummy_subs)
-        .await
-        .unwrap_or((text.clone(), vec![], std::collections::HashMap::new()));
+    let mut sanitized = crate::middleware::redaction::sanitize_text_regex_only(&text, &state.config);
 
     for (id, real) in protected {
         sanitized = sanitized.replace(&id, &real);
@@ -205,25 +202,37 @@ pub async fn proxy_handler(
 
     // ── Route by model prefix ──────────────────────────────────────────────
     if payload.model.starts_with("gemini") {
+        if payload.stream.unwrap_or(false) {
+            tracing::warn!(model = %payload.model, "Streaming not yet supported for Gemini — falling back to non-streaming");
+            // TODO: implement streaming for Gemini
+        }
         return handle_gemini(client, &state, &payload, api_key, &substitutions).await;
     }
 
     if payload.model.starts_with("claude") {
+        if payload.stream.unwrap_or(false) {
+            tracing::warn!(model = %payload.model, "Streaming not yet supported for Anthropic — falling back to non-streaming");
+            // TODO: implement streaming for Anthropic
+        }
         return handle_anthropic(client, &state, &payload, api_key, &substitutions).await;
     }
 
     // OpenAI / Ollama path
     let is_openai = payload.model.starts_with("gpt-")
+        || payload.model.starts_with("gpt4")
         || payload.model.starts_with("text-embedding")
         || payload.model.starts_with("dall-e")
         || payload.model.starts_with("whisper")
         || payload.model.starts_with("tts")
         || payload.model.starts_with("o1-")
-        || payload.model.starts_with("o3-");
+        || payload.model.starts_with("o3-")
+        || payload.model.starts_with("o4-")
+        || payload.model.starts_with("chatgpt-");
 
     let url = if is_openai {
         "https://api.openai.com/v1/chat/completions".to_string()
     } else {
+        tracing::info!(model = %payload.model, "Model not recognized as OpenAI — routing to Ollama");
         format!("{}/v1/chat/completions", state.config.ollama.base_url)
     };
 

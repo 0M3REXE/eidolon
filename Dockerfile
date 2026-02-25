@@ -1,5 +1,5 @@
 # Build Stage
-FROM rust:slim-bullseye as builder
+FROM rust:slim-bookworm as builder
 
 WORKDIR /usr/src/eidolon
 
@@ -28,13 +28,13 @@ RUN touch src/main.rs
 RUN cargo build --release
 
 # Runtime Stage
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 
 WORKDIR /app
 
 # Install runtime dependencies
 # curl/ca-certificates for HTTPS, libssl for crypto
-RUN apt-get update && apt-get install -y ca-certificates libssl1.1 curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ca-certificates libssl3 curl && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
 RUN groupadd -r eidolon && useradd -r -g eidolon eidolon

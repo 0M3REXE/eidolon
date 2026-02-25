@@ -52,8 +52,8 @@ sha2 = "0.10"
 hex = "0.4"
 # ML Integration
 # ort = { version = "2.0.0-rc.0", features = ["load-dynamic"] } # Using rc for 2.0 as requested/planned
-ort = { version = "=2.0.0-rc.9", features = ["load-dynamic", "download-binaries", "ndarray"] }
-ort-sys = "=2.0.0-rc.9"
+ort = { version = "2.0.0-rc.9", features = ["load-dynamic", "download-binaries", "ndarray"] }
+ort-sys = "2.0.0-rc.9"
 tokenizers = { version = "0.15", features = ["onig", "http"] }
 ndarray = "0.16"
 

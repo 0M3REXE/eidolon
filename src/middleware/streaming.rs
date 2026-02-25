@@ -97,10 +97,7 @@ impl StreamUnredactor {
             protected.push((id, real.clone()));
         }
 
-        let mut dummy = Vec::new();
-        let (mut sanitized, _, _) = crate::middleware::redaction::sanitize_text_pub(&to_emit, &self.state, &mut dummy)
-            .await
-            .unwrap_or((to_emit.clone(), vec![], std::collections::HashMap::new()));
+        let mut sanitized = crate::middleware::redaction::sanitize_text_regex_only(&to_emit, &self.state.config);
 
         for (id, real) in protected {
             sanitized = sanitized.replace(&id, &real);
@@ -122,10 +119,7 @@ impl StreamUnredactor {
             protected.push((id, real.clone()));
         }
 
-        let mut dummy = Vec::new();
-        let (mut sanitized, _, _) = crate::middleware::redaction::sanitize_text_pub(&to_emit, &self.state, &mut dummy)
-            .await
-            .unwrap_or((to_emit.clone(), vec![], std::collections::HashMap::new()));
+        let mut sanitized = crate::middleware::redaction::sanitize_text_regex_only(&to_emit, &self.state.config);
 
         for (id, real) in protected {
             sanitized = sanitized.replace(&id, &real);

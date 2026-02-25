@@ -1,6 +1,5 @@
 use config::{Config as ConfigLoader, ConfigError, Environment, File};
 use serde::Deserialize;
-use std::env;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ServerConfig {
@@ -21,6 +20,12 @@ pub struct SecurityConfig {
     /// 32-character secret used for AES-256-GCM encryption of Redis PII values.
     /// Override via SECURITY__ENCRYPTION_KEY env var.
     pub encryption_key: String,
+    /// Origins allowed for CORS. Empty = restrictive localhost-only default.
+    #[serde(default)]
+    pub allowed_origins: Vec<String>,
+    /// Bearer token required for `/v1/redact`. None = no auth (open).
+    #[serde(default)]
+    pub redact_api_token: Option<String>,
 }
 
 fn default_false() -> bool { false }
@@ -98,6 +103,23 @@ pub struct RateLimitConfig {
     pub requests_per_second: u64,
     /// Burst capacity above the sustained rate.
     pub burst_size: u32,
+    /// Trust X-Forwarded-For / X-Real-IP for client IP extraction.
+    /// Set to true only if behind a trusted reverse proxy.
+    #[serde(default = "default_false")]
+    pub trust_proxy: bool,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct LimitsConfig {
+    /// Maximum tokens allowed in a prompt. 0 = unlimited.
+    #[serde(default)]
+    pub max_prompt_tokens: usize,
+}
+
+impl Default for LimitsConfig {
+    fn default() -> Self {
+        Self { max_prompt_tokens: 0 }
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -129,12 +151,12 @@ pub struct Config {
     pub shield: PromptInjectionConfig,
     #[serde(default)]
     pub custom: Vec<CustomPattern>,
+    #[serde(default)]
+    pub limits: LimitsConfig,
 }
 
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
-        let _run_mode = env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
-
         let s = ConfigLoader::builder()
             .add_source(File::with_name("config"))
             .add_source(Environment::default().separator("__"))

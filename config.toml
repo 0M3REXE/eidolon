@@ -4,6 +4,7 @@ host = "0.0.0.0"
 
 [redis]
 url = "redis://127.0.0.1:6379"
+# For TLS connections, use: rediss://host:6380
 ttl_seconds = 3600 # 1 hour
 
 [security]
@@ -11,6 +12,10 @@ fail_open = false
 # IMPORTANT: Change this to a unique 32-character secret before deploying.
 # Override via SECURITY__ENCRYPTION_KEY environment variable.
 encryption_key = "change-me-to-32-char-secret-!!!!"
+# Allowed CORS origins. Empty = localhost only. Example:
+# allowed_origins = ["https://your-app.example.com", "chrome-extension://your-ext-id"]
+# Bearer token for /v1/redact. Uncomment to require auth:
+# redact_api_token = "your-secret-token-here"
 
 [ollama]
 base_url = "http://localhost:11434"
@@ -25,6 +30,8 @@ regex = "Project-\\d{4}"  # Matches "Project-1234"
 [rate_limit]
 requests_per_second = 20
 burst_size = 10
+# Only set to true if behind a trusted reverse proxy (nginx, Cloudflare, etc.)
+trust_proxy = false
 
 [nlp]
 model_path = "assets/bert-ner-quantized.onnx"
@@ -36,6 +43,7 @@ redact_cc = true
 redact_ip = true
 redact_ssn = true
 redact_apikey = true
+redact_phone = true
 redact_ner_person = true
 redact_ner_location = true
 redact_ner_org = true
@@ -43,3 +51,7 @@ redact_ner_org = true
 [shield]
 # model_path = "assets/deberta-v3-base-prompt-injection.onnx"
 # tokenizer_path = "assets/shield-tokenizer.json"
+
+[limits]
+# Maximum tokens allowed in a prompt. 0 = unlimited.
+max_prompt_tokens = 0

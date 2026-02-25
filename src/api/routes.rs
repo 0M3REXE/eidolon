@@ -19,7 +19,67 @@ use axum::{
     routing::{get, post},
     middleware::{self, from_fn},
     Router,
+    extract::State,
+    http::{HeaderMap, StatusCode, Method, HeaderValue},
+    response::{IntoResponse, Response},
+    body::Body,
+    extract::Request,
+    middleware::Next,
 };
+use tower_http::cors::CorsLayer;
+
+/// Middleware: require `Authorization: Bearer <token>` for the /v1/redact endpoint.
+async fn redact_auth_middleware(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    if let Some(required_token) = &state.config.security.redact_api_token {
+        let auth = headers
+            .get("Authorization")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        let provided = auth.strip_prefix("Bearer ").unwrap_or("");
+        if provided != required_token {
+            return (
+                StatusCode::UNAUTHORIZED,
+                axum::Json(serde_json::json!({
+                    "error": {
+                        "message": "Invalid or missing Authorization token for /v1/redact",
+                        "type": "authentication_error",
+                        "code": "unauthorized"
+                    }
+                })),
+            ).into_response();
+        }
+    }
+    next.run(request).await
+}
+
+/// Build a CORS layer from the configured allowed origins.
+fn build_cors_layer(config: &crate::config::Config) -> CorsLayer {
+    let origins = &config.security.allowed_origins;
+    if origins.is_empty() {
+        // Default: restrictive — only localhost
+        CorsLayer::new()
+            .allow_origin([
+                "http://localhost:3000".parse::<HeaderValue>().unwrap(),
+                "http://127.0.0.1:3000".parse::<HeaderValue>().unwrap(),
+            ])
+            .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+            .allow_headers(tower_http::cors::Any)
+    } else {
+        let parsed: Vec<HeaderValue> = origins
+            .iter()
+            .filter_map(|o| o.parse::<HeaderValue>().ok())
+            .collect();
+        CorsLayer::new()
+            .allow_origin(parsed)
+            .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+            .allow_headers(tower_http::cors::Any)
+    }
+}
 
 pub async fn app_router(
     state: Arc<AppState>,
@@ -40,6 +100,8 @@ pub async fn app_router(
             redact_request_middleware,
         ));
 
+    // ── CORS ─────────────────────────────────────────────────────────────
+    let cors = build_cors_layer(&state.config);
 
     Router::new()
         // ── Health & metrics ─────────────────────────────────────────────
@@ -50,8 +112,11 @@ pub async fn app_router(
         .route("/", get(ollama_root_handler))
         .route("/api/version", get(ollama_version_handler))
 
-        // ── Browser extension redact endpoint ──────────────────────────────
-        .route("/v1/redact", post(redact_handler))
+        // ── Browser extension redact endpoint (with optional auth) ─────────
+        .merge(Router::new()
+            .route("/v1/redact", post(redact_handler))
+            .layer(middleware::from_fn_with_state(state.clone(), redact_auth_middleware))
+        )
 
         // ── OpenAI-compatible passthrough ─────────────────────────────
         .route("/v1/models", get(models_handler))
@@ -87,6 +152,7 @@ pub async fn app_router(
                     ).record(latency.as_millis() as f64);
                 }),
         )
-        .layer(tower_http::cors::CorsLayer::permissive())
+        .layer(cors)
         .with_state(state)
 }
+

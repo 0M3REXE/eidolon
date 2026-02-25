@@ -37,7 +37,11 @@ pub async fn rate_limit_middleware(
     next: Next,
     limiter: SharedIpLimiter,
 ) -> Response {
-    let client_ip = extract_ip(&request).unwrap_or(IpAddr::from([127, 0, 0, 1]));
+    let client_ip = extract_ip(&request).unwrap_or_else(|| {
+        request.extensions().get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+            .map(|info| info.0.ip())
+            .unwrap_or_else(|| IpAddr::from([127, 0, 0, 1]))
+    });
 
     match limiter.check_key(&client_ip) {
         Ok(_) => next.run(request).await,
@@ -60,17 +64,28 @@ pub async fn rate_limit_middleware(
 }
 
 fn extract_ip(request: &Request<Body>) -> Option<IpAddr> {
-    if let Some(xff) = request.headers().get("X-Forwarded-For") {
-        if let Ok(xff_str) = xff.to_str() {
-            if let Ok(ip) = xff_str.split(',').next().unwrap_or("").trim().parse::<IpAddr>() {
-                return Some(ip);
+    // Check if trust_proxy is enabled via the AppState in request extensions.
+    // Only trust proxy headers (X-Forwarded-For, X-Real-IP) when explicitly configured.
+    // This prevents clients from spoofing these headers to bypass rate limits.
+    let trust_proxy = request
+        .extensions()
+        .get::<std::sync::Arc<crate::state::AppState>>()
+        .map(|s| s.config.rate_limit.trust_proxy)
+        .unwrap_or(false);
+
+    if trust_proxy {
+        if let Some(xff) = request.headers().get("X-Forwarded-For") {
+            if let Ok(xff_str) = xff.to_str() {
+                if let Ok(ip) = xff_str.split(',').next().unwrap_or("").trim().parse::<IpAddr>() {
+                    return Some(ip);
+                }
             }
         }
-    }
-    if let Some(xri) = request.headers().get("X-Real-IP") {
-        if let Ok(ip_str) = xri.to_str() {
-            if let Ok(ip) = ip_str.parse::<IpAddr>() {
-                return Some(ip);
+        if let Some(xri) = request.headers().get("X-Real-IP") {
+            if let Ok(ip_str) = xri.to_str() {
+                if let Ok(ip) = ip_str.parse::<IpAddr>() {
+                    return Some(ip);
+                }
             }
         }
     }

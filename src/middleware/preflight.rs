@@ -15,9 +15,6 @@ use crate::middleware::shield::{normalize_for_shield, find_blocked_phrase, block
 
 static TOKENIZER: OnceLock<Tokenizer> = OnceLock::new();
 
-/// Maximum tokens allowed in a prompt (GPT-4 8k window, reserving 1k for response).
-const MAX_PROMPT_TOKENS: usize = 7000;
-
 /// Initialise the token-counting tokenizer from a local file at startup.
 /// Call this from `main.rs` before starting the server.
 pub fn init_tokenizer(tokenizer_path: &str) -> anyhow::Result<()> {
@@ -44,7 +41,7 @@ fn count_tokens(text: &str) -> usize {
 ///
 /// Reads the HTTP body **once**, then:
 /// 1. Checks for adversarial prompt-injection phrases (with NFKC normalization).
-/// 2. Checks the token count against `MAX_PROMPT_TOKENS`.
+/// 2. Checks the token count against the configured max (0 = unlimited).
 /// 3. Injects the buffered bytes as a request extension so the downstream
 ///    `redact_request_middleware` can retrieve them without re-buffering.
 pub async fn pre_flight_middleware(
@@ -92,18 +89,26 @@ pub async fn pre_flight_middleware(
             }
         }
 
-        // ── 3. Token limit check ───────────────────────────────────────────
-        let token_count = count_tokens(&body_str);
-        if token_count > MAX_PROMPT_TOKENS {
-            warn!(
-                token_count,
-                limit = MAX_PROMPT_TOKENS,
-                "TOKEN LIMIT EXCEEDED"
-            );
-            metrics::counter!("eidolon_token_limit_exceeded_total").increment(1);
-            return blocked_response(&format!(
-                "Prompt too large: {} tokens (limit {})", token_count, MAX_PROMPT_TOKENS
-            ));
+        // ── 3. Token limit check (configurable via [limits] in config.toml) ──
+        // max_prompt_tokens = 0 means unlimited (default).
+        let max_tokens = parts.extensions
+            .get::<std::sync::Arc<crate::state::AppState>>()
+            .map(|s| s.config.limits.max_prompt_tokens)
+            .unwrap_or(0);
+
+        if max_tokens > 0 {
+            let token_count = count_tokens(&body_str);
+            if token_count > max_tokens {
+                warn!(
+                    token_count,
+                    limit = max_tokens,
+                    "TOKEN LIMIT EXCEEDED"
+                );
+                metrics::counter!("eidolon_token_limit_exceeded_total").increment(1);
+                return blocked_response(&format!(
+                    "Prompt too large: {} tokens (limit {})", token_count, max_tokens
+                ));
+            }
         }
     }
 

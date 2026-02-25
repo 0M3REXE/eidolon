@@ -96,14 +96,15 @@ async fn main() -> anyhow::Result<()> {
     let app = eidolon::api::routes::app_router(state, metrics_handle).await;
 
     // ── Bind & serve ──────────────────────────────────────────────────────
-    let addr = SocketAddr::from(([0, 0, 0, 0], config.server.port));
+    let host: std::net::IpAddr = config.server.host.parse().unwrap_or_else(|_| [0, 0, 0, 0].into());
+    let addr = SocketAddr::from((host, config.server.port));
     let listener = TcpListener::bind(addr).await?;
 
     info!("Eidolon proxy listening on {}", addr);
     info!("Rate limit: {} req/s per IP (burst {})", config.rate_limit.requests_per_second, config.rate_limit.burst_size);
     info!("Fail-open mode: {}", config.security.fail_open);
 
-    axum::serve(listener, app)
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 

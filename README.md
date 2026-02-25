@@ -57,6 +57,7 @@ Eidolon combines the speed of compiled Regex with the contextual understanding o
 
 **Instant Regex** — Detects structured data:
 - Email addresses
+- Phone numbers
 - Credit card numbers (with Luhn validation)
 - IPv4 addresses
 - SSNs (`XXX-XX-XXXX`)
@@ -107,9 +108,9 @@ Works with any client compatible with the OpenAI API format. Routes automaticall
 
 | Model prefix | Routed to |
 |---|---|
-| `gpt-*`, `o1-*`, `o3-*` | OpenAI API |
-| `gemini-*` | Google Generative Language API |
-| `claude-*` | Anthropic Messages API |
+| `gpt-*`, `gpt4*`, `o1-*`, `o3-*`, `o4-*`, `chatgpt-*` | OpenAI API |
+| `gemini*` | Google Generative Language API |
+| `claude*` | Anthropic Messages API |
 | Everything else | Local Ollama instance |
 
 Simply change the `base_url` in your existing SDKs.
@@ -133,18 +134,31 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - REDIS__URL=redis://redis:6379
+      - REDIS__URL=redis://default:eidolon-redis-secret@redis:6379
       - RUST_LOG=info
+      - SECURITY__ENCRYPTION_KEY=change-me-to-32-char-secret-!!!!
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
     volumes:
       - redis-data:/data
-    command: redis-server --save 60 1 --loglevel warning
+    command: redis-server --save 60 1 --loglevel warning --requirepass eidolon-redis-secret
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "eidolon-redis-secret", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
 volumes:
   redis-data:
@@ -314,6 +328,10 @@ regex = "Project-\\d{4}"
 | `REDIS__TTL_SECONDS` | `redis.ttl_seconds` | Mapping TTL | `3600` |
 | `SECURITY__FAIL_OPEN` | `security.fail_open` | Pass-through on Redis failure | `false` |
 | `SECURITY__ENCRYPTION_KEY` | `security.encryption_key` | AES-256-GCM encryption key | *(must change)* |
+| `SECURITY__ALLOWED_ORIGINS` | `security.allowed_origins` | CORS origin whitelist | `[]` (localhost) |
+| `SECURITY__REDACT_API_TOKEN` | `security.redact_api_token` | Bearer token for /v1/redact | `None` |
+| `RATE_LIMIT__TRUST_PROXY` | `rate_limit.trust_proxy` | Rate limiter respects XFF | `false` |
+| `LIMITS__MAX_PROMPT_TOKENS` | `limits.max_prompt_tokens` | Rejects prompts above limit | `0` (unlimited) |
 | `RUST_LOG` | — | Log verbosity (`eidolon=debug`, `info`, etc.) | `eidolon=debug` |
 | `LOGGING__FORMAT` | — | `text` or `json` | `text` |
 
@@ -358,8 +376,7 @@ src/
 │   ├── streaming.rs           # Streaming response unredactor (Aho-Corasick)
 │   ├── preflight.rs           # Body buffering, shield check, token limit
 │   ├── shield.rs              # Blocklist + Unicode normalization
-│   ├── rate_limiter.rs        # Token-bucket rate limiter (per IP)
-│   └── token_limiter.rs       # Prompt token counting
+│   └── rate_limiter.rs        # Token-bucket rate limiter (per IP)
 ├── state/
 │   ├── mod.rs                 # AppState (shared across handlers)
 │   └── redis.rs               # Redis connection manager + encrypted storage

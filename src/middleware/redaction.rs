@@ -372,3 +372,43 @@ fn merge_counts(
         *target.entry(k).or_insert(0) += v;
     }
 }
+
+/// Lightweight regex-only scan for egress DLP (no NLP, no Redis).
+/// Replaces matches with `[REDACTED]` directly — no synthetic IDs.
+/// Much cheaper than `sanitize_text_pub` — ideal for streaming and egress.
+pub fn sanitize_text_regex_only(text: &str, config: &crate::config::Config) -> String {
+    let mut sanitized = text.to_string();
+
+    macro_rules! redact_regex_only {
+        ($flag:expr, $regex:expr) => {
+            if $flag {
+                sanitized = $regex.replace_all(&sanitized, "[REDACTED]").to_string();
+            }
+        };
+    }
+
+    redact_regex_only!(config.policy.redact_email,  patterns::email_regex());
+    redact_regex_only!(config.policy.redact_ip,     patterns::ipv4_regex());
+    redact_regex_only!(config.policy.redact_apikey, patterns::api_key_regex());
+    redact_regex_only!(config.policy.redact_phone,  patterns::phone_regex());
+    redact_regex_only!(config.policy.redact_ssn,    patterns::ssn_regex());
+
+    // Credit card with Luhn check (can't use simple replace_all)
+    if config.policy.redact_cc {
+        let re = patterns::credit_card_regex();
+        let mut result = String::with_capacity(sanitized.len());
+        let mut last_end = 0;
+        for mat in re.find_iter(&sanitized) {
+            let digits: String = mat.as_str().chars().filter(|c| c.is_ascii_digit()).collect();
+            if patterns::luhn_check(&digits) {
+                result.push_str(&sanitized[last_end..mat.start()]);
+                result.push_str("[REDACTED]");
+                last_end = mat.end();
+            }
+        }
+        result.push_str(&sanitized[last_end..]);
+        sanitized = result;
+    }
+
+    sanitized
+}
