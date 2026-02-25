@@ -64,10 +64,46 @@ pub fn ssn_regex() -> &'static Regex {
 }
 
 // ── API Key ───────────────────────────────────────────────────────────────
+//  Covers well-known prefixed key/token formats across major providers.
+//  Each alternative is anchored to a distinctive prefix to minimise false
+//  positives while catching the vast majority of real-world keys.
 pub static API_KEY_REGEX: OnceLock<Regex> = OnceLock::new();
 pub fn api_key_regex() -> &'static Regex {
     API_KEY_REGEX.get_or_init(|| {
-        Regex::new(r"(?i)(?:sk-[a-zA-Z0-9]{20,}|AKIA[0-9A-Z]{16})").expect("Invalid API Key Regex")
+        Regex::new(concat!(
+            r"(?:",
+            // ── OpenAI ──────────────────────────────────────────────
+            r"sk-[a-zA-Z0-9]{20,}",                         // classic sk-…
+            r"|sk-proj-[a-zA-Z0-9_-]{20,}",                  // project-scoped
+            // ── AWS ─────────────────────────────────────────────────
+            r"|AKIA[0-9A-Z]{16}",                            // access-key-id
+            // ── GitHub ──────────────────────────────────────────────
+            r"|ghp_[a-zA-Z0-9]{36}",                         // personal access
+            r"|gho_[a-zA-Z0-9]{36}",                         // OAuth
+            r"|ghs_[a-zA-Z0-9]{36}",                         // app installation
+            r"|ghr_[a-zA-Z0-9]{36}",                         // refresh
+            r"|github_pat_[a-zA-Z0-9_]{22,}",                // fine-grained PAT
+            // ── GitLab ──────────────────────────────────────────────
+            r"|glpat-[a-zA-Z0-9_-]{20,}",                    // personal access
+            // ── Stripe ──────────────────────────────────────────────
+            r"|[spr]k_(?:live|test)_[a-zA-Z0-9]{10,}",       // secret / public / restricted
+            // ── Slack ───────────────────────────────────────────────
+            r"|xox[bpsar]-[a-zA-Z0-9-]{10,}",                // bot / user / app tokens
+            // ── Google Cloud ────────────────────────────────────────
+            r"|AIza[0-9A-Za-z_-]{35}",                       // API key
+            // ── Twilio ──────────────────────────────────────────────
+            r"|SK[0-9a-fA-F]{32}",                           // API key SID
+            // ── SendGrid ────────────────────────────────────────────
+            r"|SG\.[a-zA-Z0-9_-]{22,}\.[a-zA-Z0-9_-]{22,}", // API key
+            // ── Mailgun ─────────────────────────────────────────────
+            r"|key-[a-zA-Z0-9]{32}",                         // API key
+            // ── npm ─────────────────────────────────────────────────
+            r"|npm_[a-zA-Z0-9]{36}",                         // access token
+            // ── PyPI ────────────────────────────────────────────────
+            r"|pypi-[a-zA-Z0-9_-]{16,}",                     // API token
+            r")",
+        ))
+        .expect("Invalid API Key Regex")
     })
 }
 
@@ -136,8 +172,41 @@ mod tests {
     #[test]
     fn test_api_key_regex() {
         let re = api_key_regex();
+
+        // ── Should match ────────────────────────────────────────────
+        // OpenAI
         assert!(re.is_match("sk-1234567890abcdef1234567890abcdef"));
+        assert!(re.is_match("sk-proj-abc123_def456_ghi789xyz"));
+        // AWS
         assert!(re.is_match("AKIA1234567890ABCDEF"));
-        assert!(!re.is_match("sk-short"));
+        // GitHub
+        assert!(re.is_match("ghp_ABCDEFghijklmnopqrstuvwxyz1234567890"));
+        assert!(re.is_match("ghs_ABCDEFghijklmnopqrstuvwxyz1234567890"));
+        assert!(re.is_match("github_pat_AAAAAA_BBBBBBBBBBBBBBBBBBBBBBBB"));
+        // GitLab
+        assert!(re.is_match("glpat-abcdefghijklmnopqrstuvwx"));
+        // Stripe
+        assert!(re.is_match("sk_live_abcdefghij1234567890"));
+        assert!(re.is_match("pk_test_abcdefghij1234567890"));
+        // Slack
+        assert!(re.is_match("xoxb-1234-5678-abcdef"));
+        assert!(re.is_match("xoxp-1234-5678-abcdef"));
+        // Google Cloud
+        assert!(re.is_match("AIzaSyA1234567890abcdefghijklmnopqrstuv"));
+        // Twilio
+        assert!(re.is_match("SKaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+        // SendGrid
+        assert!(re.is_match("SG.abcdefghijklmnopqrstuv_.ABCDEFghijklmnopqrstuvwxyz"));
+        // Mailgun
+        assert!(re.is_match("key-1234567890abcdef1234567890abcdef"));
+        // npm
+        assert!(re.is_match("npm_abcdefghijklmnopqrstuvwxyz1234567890"));
+        // PyPI
+        assert!(re.is_match("pypi-abcdefghijklmnop"));
+
+        // ── Should NOT match ────────────────────────────────────────
+        assert!(!re.is_match("sk-short"));           // too short
+        assert!(!re.is_match("randomgarbage"));       // no recognised prefix
+        assert!(!re.is_match("ghp_tooshort"));        // wrong length
     }
 }

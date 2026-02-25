@@ -7,7 +7,7 @@
 
 Eidolon is a high-performance reverse proxy that secures Large Language Model interactions. It intercepts outgoing prompts to providers like **OpenAI**, **Google Gemini**, **Anthropic Claude**, and **Ollama**, automatically detects and redacts Personally Identifiable Information (PII) using a hybrid engine, and restores the original data in the response — all within your secure perimeter.
 
-Built in Rust, Eidolon offers sub-millisecond regex overhead and creates an airtight privacy layer for your AI applications, ensuring compliance and data sovereignty without sacrificing speed.
+Built in Rust, Eidolon offers sub-millisecond regex overhead and creates an airtight privacy layer for your AI applications, ensuring data sovereignty without sacrificing speed.
 
 ---
 
@@ -40,7 +40,7 @@ Unlike SaaS-based redaction APIs that require sending sensitive data to yet anot
 
 | Feature | Eidolon | SaaS Redaction Services | Naive Regex |
 |---|---|---|---|
-| **Data Sovereignty** | 100% Local (data never leaves your VPC) | Trust-Based (they process your PII) | Local |
+| **Data Sovereignty** | 100% Local (redaction happens within your VPC before forwarding) | Trust-Based (they process your PII) | Local |
 | **Detection Engine** | Hybrid (Regex Speed + BERT Accuracy) | AI-Only (often slow/costly) | Regex-Only (high false positives) |
 | **Re-Identification** | Context-Aware De-tokenization | Often One-Way Redaction | ❌ One-Way |
 | **Performance** | <10ms Latency (Rust + ONNX Runtime) | >500ms (Network Hops) | <1ms |
