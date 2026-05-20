@@ -70,21 +70,12 @@ impl Default for PolicyConfig {
 
 fn default_true() -> bool { true }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Default)]
 pub struct PromptInjectionConfig {
     #[serde(default)]
     pub model_path: Option<String>,
     #[serde(default)]
     pub tokenizer_path: Option<String>,
-}
-
-impl Default for PromptInjectionConfig {
-    fn default() -> Self {
-        Self {
-            model_path: None,
-            tokenizer_path: None,
-        }
-    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -109,17 +100,11 @@ pub struct RateLimitConfig {
     pub trust_proxy: bool,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Default)]
 pub struct LimitsConfig {
     /// Maximum tokens allowed in a prompt. 0 = unlimited.
     #[serde(default)]
     pub max_prompt_tokens: usize,
-}
-
-impl Default for LimitsConfig {
-    fn default() -> Self {
-        Self { max_prompt_tokens: 0 }
-    }
 }
 
 #[derive(Debug, Deserialize, Clone)]

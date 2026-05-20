@@ -2,6 +2,7 @@ use crate::api::models::OpenAIChatRequest;
 use crate::error::AppError;
 use crate::state::AppState;
 use crate::utils::response::strip_internal_notice;
+use aho_corasick::AhoCorasick;
 use axum::http::StatusCode;
 use axum::{
     extract::{State, Json, Extension},
@@ -21,11 +22,21 @@ use crate::middleware::streaming::StreamUnredactor;
 
 /// Replaces synthetic IDs with real PII values AND strips any leaked
 /// [INTERNAL] system-prompt block the model may have echoed.
-fn unmask(mut text: String, substitutions: &[(String, String)]) -> String {
-    for (fake, real) in substitutions {
-        text = text.replace(fake, real);
+fn unmask(text: String, substitutions: &[(String, String)]) -> String {
+    if substitutions.is_empty() {
+        return strip_internal_notice(text);
     }
-    strip_internal_notice(text)
+    let fakes: Vec<&str> = substitutions.iter().map(|(f, _)| f.as_str()).collect();
+    let reals: Vec<&str> = substitutions.iter().map(|(_, r)| r.as_str()).collect();
+    let ac = match AhoCorasick::builder()
+        .ascii_case_insensitive(false)
+        .build(fakes)
+    {
+        Ok(ac) => ac,
+        Err(_) => return strip_internal_notice(text),
+    };
+    let result = ac.replace_all(&text, &reals);
+    strip_internal_notice(result)
 }
 
 /// Egress scan:
@@ -34,23 +45,26 @@ fn unmask(mut text: String, substitutions: &[(String, String)]) -> String {
 /// 3. Run the redaction engine to catch *new* (hallucinated) PII.
 /// 4. Restore the protected original data.
 async fn egress_sanitize(
-    mut text: String,
+    text: String,
     state: &Arc<AppState>,
-    prompt_subs: &[(String, String)]
+    prompt_subs: &[(String, String)],
 ) -> String {
-    text = unmask(text, prompt_subs);
+    let unmasked = unmask(text, prompt_subs);
 
-    let mut protected = Vec::new();
-    for (_fake, real) in prompt_subs {
-        let id = format!("<PROTECTED_{}>", uuid::Uuid::new_v4());
-        text = text.replace(real, &id);
-        protected.push((id, real.clone()));
+    let protected: Vec<(String, String)> = prompt_subs
+        .iter()
+        .map(|(_fake, real)| (format!("<PROTECTED_{}>", uuid::Uuid::new_v4()), real.clone()))
+        .collect();
+
+    let mut protected_text = unmasked;
+    for (id, real) in &protected {
+        protected_text = protected_text.replace(real, id);
     }
 
-    let mut sanitized = crate::middleware::redaction::sanitize_text_regex_only(&text, &state.config);
+    let mut sanitized = crate::middleware::redaction::sanitize_text_regex_only(&protected_text, &state.config);
 
-    for (id, real) in protected {
-        sanitized = sanitized.replace(&id, &real);
+    for (id, real) in &protected {
+        sanitized = sanitized.replace(id, real);
     }
 
     sanitized
@@ -68,6 +82,38 @@ pub async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResp
             error!("Health check failed — Redis unreachable: {}", e);
             StatusCode::SERVICE_UNAVAILABLE
         }
+    }
+}
+
+#[derive(serde::Serialize)]
+pub struct ReadinessStatus {
+    redis: String,
+    nlp_model: String,
+    shield_model: String,
+}
+
+pub async fn ready_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let redis_ok = state.redis.ping().await.is_ok();
+    let nlp_ok = crate::engine::nlp::NlpEngine::global().is_some();
+    let shield_ok = crate::engine::shield_model::ShieldEngine::global().is_some();
+
+    let all_ok = redis_ok;
+
+    let status = ReadinessStatus {
+        redis: if redis_ok { "ok".to_string() } else { "error".to_string() },
+        nlp_model: if nlp_ok { "loaded".to_string() } else { "not loaded".to_string() },
+        shield_model: if shield_ok { "loaded".to_string() } else { "not loaded".to_string() },
+    };
+
+    let body = axum::Json(serde_json::json!({
+        "status": if all_ok { "ready" } else { "not_ready" },
+        "components": status,
+    }));
+
+    if all_ok {
+        (StatusCode::OK, body).into_response()
+    } else {
+        (StatusCode::SERVICE_UNAVAILABLE, body).into_response()
     }
 }
 
@@ -178,11 +224,11 @@ pub async fn models_handler(
     let status = res.status();
     let body_bytes = res.bytes().await?;
 
-    Ok(Response::builder()
+    Response::builder()
         .status(status)
         .header("Content-Type", "application/json")
         .body(Body::from(body_bytes))
-        .map_err(|_| AppError::Internal)?)
+        .map_err(|_| AppError::Internal)
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -297,10 +343,10 @@ pub async fn proxy_handler(
 
     let body_text = res.text().await?;
     let safe_body = egress_sanitize(body_text, &state, &substitutions).await;
-    Ok(Response::builder()
+    Response::builder()
         .header("Content-Type", "application/json")
         .body(Body::from(safe_body))
-        .map_err(|_| AppError::Internal)?)
+        .map_err(|_| AppError::Internal)
 }
 
 // ── Gemini ─────────────────────────────────────────────────────────────────
@@ -343,10 +389,10 @@ async fn handle_gemini(
 
     let resp_json = serde_json::to_string(&openai_resp).map_err(AppError::Serialization)?;
     let safe_body = egress_sanitize(resp_json, _state, substitutions).await;
-    Ok(Response::builder()
+    Response::builder()
         .header("Content-Type", "application/json")
         .body(Body::from(safe_body))
-        .map_err(|_| AppError::Internal)?)
+        .map_err(|_| AppError::Internal)
 }
 
 // ── Anthropic ──────────────────────────────────────────────────────────────
@@ -392,10 +438,10 @@ async fn handle_anthropic(
 
     let resp_json = serde_json::to_string(&openai_resp).map_err(AppError::Serialization)?;
     let safe_body = egress_sanitize(resp_json, _state, substitutions).await;
-    Ok(Response::builder()
+    Response::builder()
         .header("Content-Type", "application/json")
         .body(Body::from(safe_body))
-        .map_err(|_| AppError::Internal)?)
+        .map_err(|_| AppError::Internal)
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -405,10 +451,10 @@ async fn handle_anthropic(
 pub async fn ollama_tags_handler(State(state): State<Arc<AppState>>) -> Result<Response, AppError> {
     let url = format!("{}/api/tags", state.config.ollama.base_url);
     let res = state.client.get(&url).send().await?;
-    Ok(Response::builder()
+    Response::builder()
         .header("Content-Type", "application/json")
         .body(Body::from_stream(res.bytes_stream()))
-        .map_err(|_| AppError::Internal)?)
+        .map_err(|_| AppError::Internal)
 }
 
 pub async fn ollama_proxy_handler(
@@ -454,20 +500,20 @@ pub async fn ollama_proxy_handler(
             }
         };
 
-        return Ok(Response::builder()
+        return Response::builder()
             .header("Content-Type", "application/json")
             .header("X-Eidolon-Proxy", "Active")
             .body(Body::from_stream(body_stream))
-            .map_err(|_| AppError::Internal)?);
+            .map_err(|_| AppError::Internal);
     }
 
     let body_text = res.text().await?;
     let safe_body = egress_sanitize(body_text, &state, &substitutions).await;
-    Ok(Response::builder()
+    Response::builder()
         .header("Content-Type", "application/json")
         .header("X-Eidolon-Proxy", "Active")
         .body(Body::from(safe_body))
-        .map_err(|_| AppError::Internal)?)
+        .map_err(|_| AppError::Internal)
 }
 
 pub async fn ollama_show_handler(
@@ -476,10 +522,10 @@ pub async fn ollama_show_handler(
 ) -> Result<Response, AppError> {
     let url = format!("{}/api/show", state.config.ollama.base_url);
     let res = state.client.post(&url).json(&payload).send().await?;
-    Ok(Response::builder()
+    Response::builder()
         .header("Content-Type", "application/json")
         .body(Body::from_stream(res.bytes_stream()))
-        .map_err(|_| AppError::Internal)?)
+        .map_err(|_| AppError::Internal)
 }
 
 /// POST /api/generate — used by `ollama run model "prompt"` (non-interactive).
@@ -528,18 +574,18 @@ pub async fn ollama_generate_handler(
             }
         };
 
-        return Ok(Response::builder()
+        return Response::builder()
             .header("Content-Type", "application/json")
             .header("X-Eidolon-Proxy", "Active")
             .body(Body::from_stream(body_stream))
-            .map_err(|_| AppError::Internal)?);
+            .map_err(|_| AppError::Internal);
     }
 
     let body_text = res.text().await?;
     let safe_body = egress_sanitize(body_text, &state, &substitutions).await;
-    Ok(Response::builder()
+    Response::builder()
         .header("Content-Type", "application/json")
         .header("X-Eidolon-Proxy", "Active")
         .body(Body::from(safe_body))
-        .map_err(|_| AppError::Internal)?)
+        .map_err(|_| AppError::Internal)
 }

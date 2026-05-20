@@ -33,8 +33,8 @@ FROM debian:bookworm-slim
 WORKDIR /app
 
 # Install runtime dependencies
-# curl/ca-certificates for HTTPS, libssl for crypto
-RUN apt-get update && apt-get install -y ca-certificates libssl3 curl && rm -rf /var/lib/apt/lists/*
+# curl/ca-certificates for HTTPS, libssl for crypto, libonig for regex (tokenizers)
+RUN apt-get update && apt-get install -y ca-certificates libssl3 curl libonig6 && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
 RUN groupadd -r eidolon && useradd -r -g eidolon eidolon

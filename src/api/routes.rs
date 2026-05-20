@@ -1,6 +1,7 @@
 use crate::api::handlers::{
     proxy_handler,
     health_handler,
+    ready_handler,
     models_handler,
     redact_handler,
     ollama_root_handler,
@@ -17,7 +18,7 @@ use crate::state::AppState;
 use std::sync::Arc;
 use axum::{
     routing::{get, post},
-    middleware::{self, from_fn},
+    middleware::{self, from_fn, from_fn_with_state},
     Router,
     extract::State,
     http::{HeaderMap, StatusCode, Method, HeaderValue},
@@ -27,6 +28,9 @@ use axum::{
     middleware::Next,
 };
 use tower_http::cors::CorsLayer;
+use tower_http::limit::RequestBodyLimitLayer;
+
+const MAX_REQUEST_BODY_MB: usize = 10;
 
 /// Middleware: require `Authorization: Bearer <token>` for the /v1/redact endpoint.
 async fn redact_auth_middleware(
@@ -61,7 +65,6 @@ async fn redact_auth_middleware(
 fn build_cors_layer(config: &crate::config::Config) -> CorsLayer {
     let origins = &config.security.allowed_origins;
     if origins.is_empty() {
-        // Default: restrictive — only localhost
         CorsLayer::new()
             .allow_origin([
                 "http://localhost:3000".parse::<HeaderValue>().unwrap(),
@@ -72,7 +75,11 @@ fn build_cors_layer(config: &crate::config::Config) -> CorsLayer {
     } else {
         let parsed: Vec<HeaderValue> = origins
             .iter()
-            .filter_map(|o| o.parse::<HeaderValue>().ok())
+            .filter_map(|o| {
+                o.parse::<HeaderValue>().ok().inspect(|_| {
+                    tracing::warn!("Invalid CORS origin '{}' in config — skipping", o);
+                })
+            })
             .collect();
         CorsLayer::new()
             .allow_origin(parsed)
@@ -106,6 +113,7 @@ pub async fn app_router(
     Router::new()
         // ── Health & metrics ─────────────────────────────────────────────
         .route("/health", get(health_handler))
+        .route("/ready", get(ready_handler))
         .route("/metrics", get(move || std::future::ready(metrics_handle.render())))
 
         // ── Ollama CLI handshake (checked before every `ollama run`) ────────────
@@ -130,11 +138,15 @@ pub async fn app_router(
         .merge(redacted_router)
 
         // ── Middleware stack (last layer = outermost = runs first) ────────
+        .layer(RequestBodyLimitLayer::new(MAX_REQUEST_BODY_MB * 1024 * 1024))
         .layer(from_fn({
             let limiter = limiter.clone();
             move |req, next| rate_limit_middleware(req, next, limiter.clone())
         }))
-        .layer(middleware::from_fn(pre_flight_middleware))
+        .layer(from_fn_with_state(
+            state.clone(),
+            pre_flight_middleware,
+        ))
         .layer(
             tower_http::trace::TraceLayer::new_for_http()
                 .make_span_with(tower_http::trace::DefaultMakeSpan::new())

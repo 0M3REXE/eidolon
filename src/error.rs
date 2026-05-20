@@ -38,6 +38,27 @@ pub enum AppError {
     BadRequest(String),
 }
 
+impl Clone for AppError {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Config(e) => Self::Config(config::ConfigError::Message(e.to_string())),
+            Self::Redis(e) => Self::Redis(redis::RedisError::from((
+                redis::ErrorKind::TypeError,
+                "clone",
+                e.to_string(),
+            ))),
+            Self::Io(e) => Self::Io(std::io::Error::other(e.to_string())),
+            Self::Network(e) => Self::Unknown(anyhow::anyhow!("Network error: {}", e)),
+            Self::Serialization(e) => Self::Unknown(anyhow::anyhow!("Serialization error: {}", e)),
+            Self::Unknown(e) => Self::Unknown(anyhow::anyhow!(e.to_string())),
+            Self::Axum(e) => Self::Unknown(anyhow::anyhow!("Axum error: {}", e)),
+            Self::Nlp(s) => Self::Nlp(s.clone()),
+            Self::Internal => Self::Internal,
+            Self::BadRequest(s) => Self::BadRequest(s.clone()),
+        }
+    }
+}
+
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, error_message) = match self {

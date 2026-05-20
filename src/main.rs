@@ -1,14 +1,15 @@
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
+use tokio::time::timeout;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // ── Tracing ────────────────────────────────────────────────────────────
-    let format = std::env::var("LOGGING__FORMAT").unwrap_or_else(|_| "text".to_string());
+    let format = std::env::var("LOGGING__FORMAT").ok().unwrap_or_else(|| "text".to_string());
     let filter = tracing_subscriber::EnvFilter::new(
-        std::env::var("RUST_LOG").unwrap_or_else(|_| "eidolon=debug,tower_http=debug".into()),
+        std::env::var("RUST_LOG").ok().unwrap_or_else(|| "eidolon=debug,tower_http=debug".into()),
     );
 
     if format.eq_ignore_ascii_case("json") {
@@ -32,20 +33,25 @@ async fn main() -> anyhow::Result<()> {
     // ── Configuration ──────────────────────────────────────────────────────
     let config = eidolon::config::Config::from_env()?;
 
-    // ── Redis (with encryption key) ────────────────────────────────────────
-    let redis = eidolon::state::RedisState::new(&config.redis, &config.security.encryption_key)
-        .await
-        .expect("Failed to connect to Redis");
-
-    // ── Security sanity check ──────────────────────────────────────────────
-    if config.security.encryption_key == "change-me-to-32-char-secret-!!!!"
-        || config.security.encryption_key.len() < 16
-    {
-        tracing::warn!(
-            "⚠️  SECURITY WARNING: encryption_key is set to the default or is too short. \
-             All PII in Redis is encrypted with a publicly known key. \
-             Set SECURITY__ENCRYPTION_KEY to a strong 32+ character secret before deploying."
+    // ── Security sanity check — refuse to start with known-weak key ──────────
+    const KNOWN_DEFAULT_KEY: &str = "change-me-to-32-char-secret-!!!!";
+    const MIN_KEY_LEN: usize = 32;
+    if config.security.encryption_key == KNOWN_DEFAULT_KEY {
+        tracing::error!(
+            "FATAL: encryption_key is still set to the default value. \
+             All PII in Redis would be encrypted with a publicly known key. \
+             Set SECURITY__ENCRYPTION_KEY to a strong {MIN_KEY_LEN}+ character secret."
         );
+        std::process::exit(1);
+    }
+    if config.security.encryption_key.len() < MIN_KEY_LEN {
+        tracing::error!(
+            "FATAL: encryption_key is only {} characters (minimum {}). \
+             PII encryption requires a strong key.",
+            config.security.encryption_key.len(),
+            MIN_KEY_LEN
+        );
+        std::process::exit(1);
     }
 
     // ── HTTP Client (per-upstream pool tuning) ─────────────────────────────
@@ -58,7 +64,9 @@ async fn main() -> anyhow::Result<()> {
         .expect("Failed to create HTTP client");
 
     let state = std::sync::Arc::new(eidolon::state::AppState::new(
-        redis,
+        eidolon::state::RedisState::new(&config.redis, &config.security.encryption_key)
+            .await
+            .expect("Failed to connect to Redis"),
         config.clone(),
         client,
     ));
@@ -104,9 +112,16 @@ async fn main() -> anyhow::Result<()> {
     info!("Rate limit: {} req/s per IP (burst {})", config.rate_limit.requests_per_second, config.rate_limit.burst_size);
     info!("Fail-open mode: {}", config.security.fail_open);
 
-    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+    let shutdown = shutdown_signal();
+    let server = axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
+        .with_graceful_shutdown(shutdown);
+
+    if timeout(SHUTDOWN_TIMEOUT, server).await.is_err() {
+        tracing::warn!("Server shutdown timed out after {}s — forcing exit.", SHUTDOWN_TIMEOUT.as_secs());
+    } else {
+        info!("Graceful shutdown complete.");
+    }
 
     Ok(())
 }

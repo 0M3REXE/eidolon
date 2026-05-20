@@ -26,12 +26,44 @@ impl RedisState {
             config.url.clone()
         };
         info!("Connecting to Redis at {}", log_url);
-        let client = Client::open(config.url.as_str())?;
 
-        let conn_manager = client.get_connection_manager().await.map_err(|e| {
-            error!("Failed to connect to Redis connection manager: {}", e);
-            e
-        })?;
+        let mut attempts = 0;
+        const MAX_RETRIES: u32 = 5;
+        const BASE_DELAY_MS: u64 = 500;
+
+        let conn_manager = loop {
+            match Client::open(config.url.as_str()) {
+                Ok(client) => match client.get_connection_manager().await {
+                    Ok(cm) => break cm,
+                    Err(e) => {
+                        attempts += 1;
+                        if attempts >= MAX_RETRIES {
+                            error!("Failed to connect to Redis after {} attempts: {}", MAX_RETRIES, e);
+                            return Err(e.into());
+                        }
+                        let delay = BASE_DELAY_MS * 2u64.pow(attempts - 1);
+                        tracing::warn!(
+                            "Redis connection attempt {}/{} failed: {}. Retrying in {}ms...",
+                            attempts, MAX_RETRIES, e, delay
+                        );
+                        tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                    }
+                },
+                Err(e) => {
+                    attempts += 1;
+                    if attempts >= MAX_RETRIES {
+                        error!("Failed to create Redis client after {} attempts: {}", MAX_RETRIES, e);
+                        return Err(e.into());
+                    }
+                    let delay = BASE_DELAY_MS * 2u64.pow(attempts - 1);
+                    tracing::warn!(
+                        "Redis client creation attempt {}/{} failed: {}. Retrying in {}ms...",
+                        attempts, MAX_RETRIES, e, delay
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                }
+            }
+        };
 
         info!("Redis connection established");
         Ok(Self {

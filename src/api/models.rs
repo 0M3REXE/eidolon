@@ -1,5 +1,34 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    System,
+    User,
+    Assistant,
+    Tool,
+}
+
+impl Role {
+    pub fn from_role(s: &str) -> Option<Self> {
+        match s {
+            "system" => Some(Self::System),
+            "user" => Some(Self::User),
+            "assistant" => Some(Self::Assistant),
+            "tool" => Some(Self::Tool),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::System => "system",
+            Self::User => "user",
+            Self::Assistant => "assistant",
+            Self::Tool => "tool",
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(untagged)]
 pub enum ChatMessageContent {
@@ -9,6 +38,7 @@ pub enum ChatMessageContent {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct OpenAIChatMessage {
+    #[serde(default)]
     pub role: String,
     pub content: Option<ChatMessageContent>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -27,6 +57,12 @@ pub struct OpenAIChatRequest {
     pub stream: Option<bool>,
     #[serde(flatten)]
     pub unknown_fields: serde_json::Map<String, serde_json::Value>,
+}
+
+impl OpenAIChatRequest {
+    pub fn model(&self) -> &str {
+        &self.model
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

@@ -131,7 +131,7 @@ impl NlpEngine {
             let (start, end) = offsets[i];
             if start == end { continue; }
 
-            if label.starts_with("B-") {
+            if let Some(stripped) = label.strip_prefix("B-") {
                 if let (Some(s), Some(e), Some(lbl)) =
                     (current_entity_start, current_entity_end, current_entity_label.take())
                 {
@@ -145,10 +145,10 @@ impl NlpEngine {
                 }
                 current_entity_start = Some(start);
                 current_entity_end = Some(end);
-                current_entity_label = Some(label[2..].to_string());
-            } else if label.starts_with("I-") {
+                current_entity_label = Some(stripped.to_string());
+            } else if let Some(stripped) = label.strip_prefix("I-") {
                 if let Some(ref lbl) = current_entity_label {
-                    if lbl == &label[2..] {
+                    if lbl == stripped {
                         current_entity_end = Some(end);
                     } else {
                         if let (Some(s), Some(e), Some(prev_lbl)) =
@@ -164,12 +164,12 @@ impl NlpEngine {
                         }
                         current_entity_start = Some(start);
                         current_entity_end = Some(end);
-                        current_entity_label = Some(label[2..].to_string());
+                        current_entity_label = Some(stripped.to_string());
                     }
                 } else {
                     current_entity_start = Some(start);
                     current_entity_end = Some(end);
-                    current_entity_label = Some(label[2..].to_string());
+                    current_entity_label = Some(stripped.to_string());
                 }
             }
         }

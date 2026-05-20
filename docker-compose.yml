@@ -1,22 +1,16 @@
-version: '3.8'
-
 services:
   eidolon:
     build: .
     ports:
       - "3000:3000"
-    environment:
-      - REDIS__URL=redis://default:eidolon-redis-secret@redis:6379
-      - RUST_LOG=info
-      # IMPORTANT: Change this before deploying to production.
-      - SECURITY__ENCRYPTION_KEY=change-me-to-32-char-secret-!!!!
-      # Override config values via environment variables (using double underscore separator)
+    env_file:
+      - .env
     depends_on:
       redis:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000/ready"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -27,9 +21,9 @@ services:
     restart: unless-stopped
     volumes:
       - redis-data:/data
-    command: redis-server --save 60 1 --loglevel warning --requirepass eidolon-redis-secret
+    command: redis-server --save 60 1 --loglevel warning --requirepass ${REDIS_PASSWORD:-changeme}
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "eidolon-redis-secret", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
       interval: 10s
       timeout: 3s
       retries: 5
