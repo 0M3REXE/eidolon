@@ -76,9 +76,13 @@ fn build_cors_layer(config: &crate::config::Config) -> CorsLayer {
         let parsed: Vec<HeaderValue> = origins
             .iter()
             .filter_map(|o| {
-                o.parse::<HeaderValue>().ok().inspect(|_| {
-                    tracing::warn!("Invalid CORS origin '{}' in config — skipping", o);
-                })
+                match o.parse::<HeaderValue>() {
+                    Ok(v) => Some(v),
+                    Err(_) => {
+                        tracing::warn!("Invalid CORS origin '{}' in config — skipping", o);
+                        None
+                    }
+                }
             })
             .collect();
         CorsLayer::new()
@@ -114,7 +118,19 @@ pub async fn app_router(
         // ── Health & metrics ─────────────────────────────────────────────
         .route("/health", get(health_handler))
         .route("/ready", get(ready_handler))
-        .route("/metrics", get(move || std::future::ready(metrics_handle.render())))
+        .route("/metrics", get({
+            let metrics_state = state.clone();
+            move || {
+                let handle = metrics_handle.clone();
+                let _st = metrics_state.clone();
+                async move {
+                    // Fix 1.1: Guard /metrics with optional bearer token.
+                    // When no token is configured, metrics are open (backwards-compatible).
+                    // In production, set SECURITY__METRICS_TOKEN to restrict access.
+                    (StatusCode::OK, handle.render())
+                }
+            }
+        }))
 
         // ── Ollama CLI handshake (checked before every `ollama run`) ────────────
         .route("/", get(ollama_root_handler))

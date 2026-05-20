@@ -52,7 +52,7 @@ pub async fn redact_request_middleware(
             if let Some(mut content) = message.content.take() {
                 match &mut content {
                     ChatMessageContent::Text(text) => {
-                        let (redacted, _subs, counts) =
+                        let (redacted, counts) =
                             sanitize_text(text, &state, &mut substitutions).await?;
                         merge_counts(&mut pii_counts, counts);
                         if &redacted != text {
@@ -64,7 +64,7 @@ pub async fn redact_request_middleware(
                             if part.get("type").and_then(|t| t.as_str()) == Some("text") {
                                 if let Some(text_val) = part.get_mut("text") {
                                     if let Some(text) = text_val.as_str() {
-                                        let (redacted, _subs, counts) =
+                                        let (redacted, counts) =
                                             sanitize_text(text, &state, &mut substitutions).await?;
                                         merge_counts(&mut pii_counts, counts);
 if redacted != text {
@@ -85,14 +85,14 @@ if redacted != text {
         if total_redacted > 0 {
 let system_prompt = build_system_prompt(&substitutions);
 
-        let has_system = chat_req.messages.first().map(|m| m.role.as_str()) == Some("system");
+        let has_system = chat_req.messages.first().map(|m| m.role) == Some(crate::api::models::Role::System);
             if has_system {
                 if let Some(ChatMessageContent::Text(text)) = chat_req.messages[0].content.as_mut() {
                     *text = format!("{}\n\n{}", text, system_prompt);
                 }
             } else {
                 chat_req.messages.insert(0, crate::api::models::OpenAIChatMessage {
-                    role: "system".to_string(),
+                    role: crate::api::models::Role::System,
                     content: Some(ChatMessageContent::Text(system_prompt)),
                     name: None,
                     unknown_fields: serde_json::Map::new(),
@@ -102,7 +102,7 @@ let system_prompt = build_system_prompt(&substitutions);
         new_body_bytes = serde_json::to_vec(&chat_req)?;
         
     } else if let Ok(mut gen_req) = serde_json::from_slice::<crate::api::models::OllamaGenerateRequest>(&bytes) {
-        let (redacted, _subs, counts) =
+        let (redacted, counts) =
             sanitize_text(&gen_req.prompt, &state, &mut substitutions).await?;
         merge_counts(&mut pii_counts, counts);
         if redacted != gen_req.prompt {
@@ -184,13 +184,13 @@ fn build_system_prompt(substitutions: &[(String, String)]) -> String {
 
 /// Sanitizes a single text string.
 ///
-/// Returns (redacted_text, new_substitutions, pii_category_counts).
+/// Returns (redacted_text, pii_category_counts).
 /// Public re-export of `sanitize_text` for use by the `/v1/redact` handler.
 pub async fn sanitize_text_pub(
     text: &str,
     state: &AppState,
     substitutions: &mut Vec<(String, String)>,
-) -> Result<(String, Vec<(String, String)>, std::collections::HashMap<String, u32>), crate::error::AppError> {
+) -> Result<(String, std::collections::HashMap<String, u32>), crate::error::AppError> {
     sanitize_text(text, state, substitutions).await
 }
 
@@ -198,7 +198,7 @@ async fn sanitize_text(
     text: &str,
     state: &AppState,
     substitutions: &mut Vec<(String, String)>,
-) -> Result<(String, Vec<(String, String)>, std::collections::HashMap<String, u32>), crate::error::AppError> {
+) -> Result<(String, std::collections::HashMap<String, u32>), crate::error::AppError> {
     let start = Instant::now();
     let mut sanitized = text.to_string();
     let mut counts: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
@@ -332,7 +332,7 @@ async fn sanitize_text(
         );
     }
 
-    Ok((sanitized, vec![], counts))
+    Ok((sanitized, counts))
 }
 
 async fn get_or_create_synthetic(

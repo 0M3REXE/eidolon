@@ -16,6 +16,8 @@ encryption_key = "change-me-to-32-char-secret-!!!!"
 # allowed_origins = ["https://your-app.example.com", "chrome-extension://your-ext-id"]
 # Bearer token for /v1/redact. Uncomment to require auth:
 # redact_api_token = "your-secret-token-here"
+# Bearer token for /metrics endpoint. Uncomment to restrict access:
+# metrics_token = "your-metrics-secret"
 
 [ollama]
 base_url = "http://localhost:11434"

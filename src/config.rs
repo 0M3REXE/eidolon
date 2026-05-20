@@ -26,6 +26,9 @@ pub struct SecurityConfig {
     /// Bearer token required for `/v1/redact`. None = no auth (open).
     #[serde(default)]
     pub redact_api_token: Option<String>,
+    /// Bearer token required for `/metrics`. None = open (backwards-compatible).
+    #[serde(default)]
+    pub metrics_token: Option<String>,
 }
 
 fn default_false() -> bool { false }
@@ -142,8 +145,50 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
-        let s = ConfigLoader::builder()
-            .add_source(File::with_name("config"))
+        // Fix 5.1: Search for config.toml in multiple locations:
+        // 1. Next to the executable (for Docker / packaged deployments)
+        // 2. Current working directory (for local development)
+        // 3. /etc/eidolon/ (for system-wide installs)
+        let mut builder = ConfigLoader::builder();
+
+        let mut config_found = false;
+
+        // Try executable's directory first
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                let exe_config = exe_dir.join("config.toml");
+                if exe_config.exists() {
+                    builder = builder.add_source(File::from(exe_config));
+                    config_found = true;
+                }
+            }
+        }
+
+        // Then try CWD (default behavior)
+        if !config_found {
+            let cwd_config = std::path::Path::new("config.toml");
+            if cwd_config.exists() {
+                builder = builder.add_source(File::with_name("config"));
+                config_found = true;
+            }
+        }
+
+        // Then try /etc/eidolon/ (Linux system-wide)
+        #[cfg(unix)]
+        if !config_found {
+            let etc_config = std::path::Path::new("/etc/eidolon/config.toml");
+            if etc_config.exists() {
+                builder = builder.add_source(File::from(etc_config.to_path_buf()));
+                config_found = true;
+            }
+        }
+
+        // Fallback: try the default name (will error if not found)
+        if !config_found {
+            builder = builder.add_source(File::with_name("config"));
+        }
+
+        let s = builder
             .add_source(Environment::default().separator("__"))
             .build()?;
 

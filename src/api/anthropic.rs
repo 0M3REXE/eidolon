@@ -90,7 +90,7 @@ impl AnthropicRequest {
         max_tokens: u32,
     ) -> Self {
         // Extract a leading system message if present.
-        let system = messages.iter().find(|m| m.role == "system").map(|m| {
+        let system = messages.iter().find(|m| m.role == crate::api::models::Role::System).map(|m| {
             match &m.content {
                 Some(crate::api::models::ChatMessageContent::Text(s)) => s.clone(),
                 _ => String::new(),
@@ -99,7 +99,7 @@ impl AnthropicRequest {
 
         let chat_messages: Vec<AnthropicMessage> = messages
             .iter()
-            .filter(|m| m.role != "system")
+            .filter(|m| m.role != crate::api::models::Role::System)
             .map(|m| {
                 let content = match &m.content {
                     Some(crate::api::models::ChatMessageContent::Text(s)) => AnthropicContent::Text(s.clone()),
@@ -119,7 +119,7 @@ impl AnthropicRequest {
                     None => AnthropicContent::Text(String::new()),
                 };
                 AnthropicMessage {
-                    role: m.role.clone(),
+                    role: m.role.as_str().to_string(),
                     content,
                 }
             })
@@ -160,7 +160,7 @@ impl OpenAIChatResponse {
             choices: vec![OpenAIChatChoice {
                 index: 0,
                 message: OpenAIChatMessage {
-                    role: "assistant".to_string(),
+                    role: crate::api::models::Role::Assistant,
                     content: Some(crate::api::models::ChatMessageContent::Text(text)),
                     name: None,
                     unknown_fields: Default::default(),

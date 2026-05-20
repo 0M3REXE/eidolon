@@ -1,6 +1,9 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Deserializer};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Message role with case-insensitive deserialization to prevent bypassing
+/// system prompt detection via role: "SYSTEM" or "System".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Role {
     System,
     User,
@@ -8,17 +11,23 @@ pub enum Role {
     Tool,
 }
 
-impl Role {
-    pub fn from_role(s: &str) -> Option<Self> {
-        match s {
-            "system" => Some(Self::System),
-            "user" => Some(Self::User),
-            "assistant" => Some(Self::Assistant),
-            "tool" => Some(Self::Tool),
-            _ => None,
+impl<'de> Deserialize<'de> for Role {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.to_lowercase().as_str() {
+            "system" => Ok(Role::System),
+            "user" => Ok(Role::User),
+            "assistant" => Ok(Role::Assistant),
+            "tool" => Ok(Role::Tool),
+            other => Err(serde::de::Error::custom(format!("unknown role: {}", other))),
         }
     }
+}
 
+impl Role {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::System => "system",
@@ -38,14 +47,16 @@ pub enum ChatMessageContent {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct OpenAIChatMessage {
-    #[serde(default)]
-    pub role: String,
+    #[serde(default = "default_user_role")]
+    pub role: Role,
     pub content: Option<ChatMessageContent>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(flatten)]
     pub unknown_fields: serde_json::Map<String, serde_json::Value>,
 }
+
+fn default_user_role() -> Role { Role::User }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct OpenAIChatRequest {

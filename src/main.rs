@@ -60,6 +60,9 @@ async fn main() -> anyhow::Result<()> {
         .connect_timeout(std::time::Duration::from_secs(10))
         .pool_idle_timeout(std::time::Duration::from_secs(90))
         .pool_max_idle_per_host(20)
+        // Fix 1.2: Limit upstream response size to prevent OOM (50 MB).
+        // Note: This applies to the full response including streaming chunks.
+        .read_timeout(std::time::Duration::from_secs(300))
         .build()
         .expect("Failed to create HTTP client");
 

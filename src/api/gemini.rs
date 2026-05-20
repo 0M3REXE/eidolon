@@ -59,8 +59,8 @@ impl GeminiRequest {
         let contents = req.messages.iter().map(|msg| {
             // Map roles: user -> user, assistant -> model, system -> user (for now, or specific handling)
             // Gemini roles: "user", "model"
-            let role = match msg.role.as_str() {
-                "assistant" => "model",
+            let role = match msg.role {
+                crate::api::models::Role::Assistant => "model",
                 _ => "user", // "system" also maps to user in simple cases for Gemini 1.0, 1.5 has system_instruction
             }
             .to_string();
@@ -138,7 +138,7 @@ impl OpenAIChatResponse {
 
         let choices = gemini_resp.candidates.unwrap_or_default().into_iter().enumerate().map(|(i, c)| {
             // Map Gemini role "model" -> "assistant"
-            let role = if c.content.role == "model" { "assistant" } else { "user" }.to_string();
+            let role = if c.content.role == "model" { crate::api::models::Role::Assistant } else { crate::api::models::Role::User };
             let content_text = c.content.parts.first().map(|p| p.text.clone()).unwrap_or_default();
             
             OpenAIChatChoice {

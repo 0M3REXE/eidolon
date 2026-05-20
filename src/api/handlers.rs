@@ -174,7 +174,7 @@ pub async fn redact_handler(
     }
 
     let mut substitutions: Vec<(String, String)> = Vec::new();
-    let (redacted, _subs, counts) =
+    let (redacted, counts) =
         sanitize_text_pub(&payload.text, &state, &mut substitutions).await?;
 
     let pii_count: u32 = counts.values().sum();
